@@ -2,7 +2,6 @@
 # Uses db module for storage, no raw SQL or UI code here
 
 import json
-import re
 from datetime import datetime
 from urllib.parse import quote_plus
 import xml.etree.ElementTree as ET
@@ -53,13 +52,26 @@ def fetch_news_rss(company_name: str, ticker: str = None) -> list:
             "published_at": published_at,
         })
 
-    return articles
+    return articles[:config.MAX_ARTICLES_PER_COMPANY]
+
+
+def title_mentions_company(title: str, company_name: str, ticker: str = None) -> bool:
+    """Quick check if title mentions the company - skip obvious irrelevant articles."""
+    title_lower = title.lower()
+    # Check company name (first word at minimum, e.g., "Apple" from "Apple Inc")
+    name_parts = company_name.lower().split()
+    if name_parts[0] in title_lower:
+        return True
+    # Check ticker
+    if ticker and ticker.upper() in title.upper():
+        return True
+    return False
 
 
 def classify_article(title: str, source: str, company_name: str) -> dict:
     """Use Claude Haiku to classify an article and generate summary.
 
-    Returns dict with: summary, relevance_score, signal_type
+    Returns dict with: summary, relevance_score, signal_type, sales_relevance (ir_pain_score)
     """
     client = anthropic.Anthropic()
 
@@ -97,13 +109,23 @@ def classify_article(title: str, source: str, company_name: str) -> dict:
             result = {
                 "summary": response_text[:200],
                 "relevance_score": 0.5,
-                "signal_type": "general",
+                "signal_type": "neutral",
+                "ir_pain_score": 0.5,
             }
+
+    # Validate signal_type is a known type
+    signal_type = result.get("signal_type", "neutral")
+    if signal_type not in config.SIGNAL_TYPES:
+        signal_type = "neutral"
+
+    # Use ir_pain_score for sales_relevance column (no schema change needed)
+    ir_pain_score = result.get("ir_pain_score", result.get("sales_relevance", 0.5))
 
     return {
         "summary": result.get("summary", ""),
         "relevance_score": float(result.get("relevance_score", 0.5)),
-        "signal_type": result.get("signal_type", "general"),
+        "signal_type": signal_type,
+        "sales_relevance": float(ir_pain_score),
     }
 
 
@@ -124,9 +146,17 @@ def process_company(company: dict) -> dict:
     articles = fetch_news_rss(company["name"], company.get("ticker"))
     stats["articles_fetched"] = len(articles)
 
+    # Batch check which URLs already exist (single DB call)
+    all_urls = [a["url"] for a in articles]
+    existing_urls = db.get_existing_urls(all_urls)
+
     for article in articles:
         # Skip if already processed
-        if db.article_exists(article["url"]):
+        if article["url"] in existing_urls:
+            continue
+
+        # Skip if title doesn't mention the company (avoid irrelevant articles)
+        if not title_mentions_company(article["title"], company["name"], company.get("ticker")):
             continue
 
         # Add article to database
@@ -158,6 +188,7 @@ def process_company(company: dict) -> dict:
                 summary=classification["summary"],
                 relevance_score=classification["relevance_score"],
                 signal_type=classification["signal_type"],
+                sales_relevance=classification["sales_relevance"],
             )
             stats["signals_created"] += 1
         except Exception:
