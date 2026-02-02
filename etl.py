@@ -1,5 +1,5 @@
 # etl.py - Data pipeline: fetch, classify, transform
-# No database queries or UI code here
+# Uses db module for storage, no raw SQL or UI code here
 
 import json
 import re
@@ -79,20 +79,26 @@ def classify_article(title: str, source: str, company_name: str) -> dict:
     response_text = message.content[0].text
 
     # Parse JSON from response
+    result = None
     try:
-        # Handle potential markdown code blocks
-        json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
-        if json_match:
-            result = json.loads(json_match.group())
-        else:
-            result = json.loads(response_text)
+        # First try: parse the whole response as JSON
+        result = json.loads(response_text)
     except json.JSONDecodeError:
-        # Fallback if parsing fails
-        result = {
-            "summary": response_text[:200],
-            "relevance_score": 0.5,
-            "signal_type": "general",
-        }
+        # Second try: strip markdown code blocks and parse
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            # Remove ```json and ``` markers
+            lines = cleaned.split("\n")
+            cleaned = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+        try:
+            result = json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Fallback: extract values manually
+            result = {
+                "summary": response_text[:200],
+                "relevance_score": 0.5,
+                "signal_type": "general",
+            }
 
     return {
         "summary": result.get("summary", ""),
@@ -138,21 +144,25 @@ def process_company(company: dict) -> dict:
         stats["articles_new"] += 1
 
         # Classify with Claude
-        classification = classify_article(
-            title=article["title"],
-            source=article["source"],
-            company_name=company["name"],
-        )
+        try:
+            classification = classify_article(
+                title=article["title"],
+                source=article["source"],
+                company_name=company["name"],
+            )
 
-        # Save signal
-        db.add_signal(
-            article_id=db_article["id"],
-            company_id=company["id"],
-            summary=classification["summary"],
-            relevance_score=classification["relevance_score"],
-            signal_type=classification["signal_type"],
-        )
-        stats["signals_created"] += 1
+            # Save signal
+            db.add_signal(
+                article_id=db_article["id"],
+                company_id=company["id"],
+                summary=classification["summary"],
+                relevance_score=classification["relevance_score"],
+                signal_type=classification["signal_type"],
+            )
+            stats["signals_created"] += 1
+        except Exception:
+            # Skip this article if classification fails, continue with others
+            continue
 
     return stats
 

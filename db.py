@@ -20,8 +20,15 @@ def get_client() -> Client:
 # --- Companies ---
 
 def add_company(name: str, ticker: str = None, aliases: list = None) -> dict:
-    """Add a company to the watchlist."""
+    """Add a company to the watchlist. Raises ValueError if ticker already exists."""
     client = get_client()
+
+    # Check for duplicate ticker
+    if ticker:
+        existing = get_company_by_ticker(ticker)
+        if existing:
+            raise ValueError(f"Company with ticker '{ticker}' already exists")
+
     data = {
         "name": name,
         "ticker": ticker,

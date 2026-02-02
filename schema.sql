@@ -5,13 +5,13 @@
 CREATE TABLE IF NOT EXISTS companies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    ticker TEXT,
+    ticker TEXT UNIQUE,
     aliases TEXT[] DEFAULT '{}',
     active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create index on ticker for lookups
+-- Create index on ticker for lookups (UNIQUE already creates an index, but explicit for clarity)
 CREATE INDEX IF NOT EXISTS idx_companies_ticker ON companies(ticker);
 
 -- Articles fetched from news sources
