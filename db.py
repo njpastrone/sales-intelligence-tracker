@@ -2,7 +2,7 @@
 # No external API calls or UI code here
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from supabase import create_client, Client
 
 import config
@@ -60,7 +60,7 @@ def add_article(company_id: str, title: str, url: str, source: str, published_at
         "url": url,
         "source": source,
         "published_at": published_at.isoformat() if published_at else None,
-        "fetched_at": datetime.utcnow().isoformat(),
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
         result = client.table(config.TABLE_ARTICLES).insert(data).execute()

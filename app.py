@@ -1,6 +1,7 @@
 # app.py - Streamlit UI only
 # No business logic or API calls here
 
+import os
 import streamlit as st
 import pandas as pd
 
@@ -15,13 +16,20 @@ st.set_page_config(
 )
 
 # Load secrets into environment
-if hasattr(st, "secrets"):
-    import os
+try:
     for key in ["SUPABASE_URL", "SUPABASE_KEY", "ANTHROPIC_API_KEY"]:
         if key in st.secrets:
             os.environ[key] = st.secrets[key]
+except FileNotFoundError:
+    pass  # No secrets file yet
 
 st.title("📊 Sales Intelligence Tracker")
+
+# Load companies once for reuse
+try:
+    companies = db.get_companies()
+except Exception:
+    companies = []
 
 # Sidebar - Company management
 with st.sidebar:
@@ -43,13 +51,29 @@ with st.sidebar:
 
     # Company list
     st.subheader("Watchlist")
-    try:
-        companies = db.get_companies()
+    if companies:
         for c in companies:
             ticker_str = f" ({c['ticker']})" if c.get('ticker') else ""
             st.write(f"• {c['name']}{ticker_str}")
-    except Exception as e:
-        st.warning("Database not connected. Add secrets to .streamlit/secrets.toml")
+    else:
+        st.info("No companies yet. Add one above.")
+
+    # ETL trigger
+    st.divider()
+    st.subheader("Fetch News")
+    if st.button("🔄 Run Pipeline", disabled=len(companies) == 0):
+        with st.spinner("Fetching news and classifying..."):
+            try:
+                import etl
+                stats = etl.run_pipeline()
+                st.success(
+                    f"Done! Fetched {stats['articles_fetched']} articles, "
+                    f"{stats['articles_new']} new, "
+                    f"{stats['signals_created']} signals created."
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"Pipeline error: {e}")
 
 # Main area - Signals
 st.header("Recent Signals")
@@ -57,12 +81,8 @@ st.header("Recent Signals")
 # Filters
 col1, col2 = st.columns(2)
 with col1:
-    try:
-        companies = db.get_companies()
-        company_options = ["All"] + [c["name"] for c in companies]
-        selected_company = st.selectbox("Filter by Company", company_options)
-    except:
-        selected_company = "All"
+    company_options = ["All"] + [c["name"] for c in companies]
+    selected_company = st.selectbox("Filter by Company", company_options)
 
 with col2:
     min_relevance = st.slider("Minimum Relevance", 0.0, 1.0, config.DEFAULT_RELEVANCE_THRESHOLD)
@@ -104,7 +124,7 @@ try:
             mime="text/csv",
         )
     else:
-        st.info("No signals found. Add companies and run the ETL pipeline.")
+        st.info("No signals found. Add companies and run the pipeline.")
 
 except Exception as e:
     st.warning(f"Could not load signals: {e}")
