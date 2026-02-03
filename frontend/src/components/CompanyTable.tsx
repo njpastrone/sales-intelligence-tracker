@@ -15,7 +15,7 @@ import type { CompanyPainSummary, CompanyFinancials } from '../types';
 import { SIGNAL_LABELS } from '../types';
 import { ExpandedRow } from './ExpandedRow';
 import { ActionButtons } from './ActionButtons';
-import type { StockMovementFilter } from './Filters';
+import type { StockMovementFilter, IRCycleFilter } from './Filters';
 
 interface CompanyTableProps {
   data: CompanyPainSummary[];
@@ -27,6 +27,7 @@ interface CompanyTableProps {
   onDelete: (companyId: string) => void;
   signalTypeFilter: string | null;
   stockMovementFilter: StockMovementFilter;
+  irCycleFilter: IRCycleFilter;
   showHidden: boolean;
 }
 
@@ -35,6 +36,89 @@ interface CompanyTableProps {
 function formatEarningsDate(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+// IR Cycle stages based on earnings dates
+type IRCycleStage = 'quiet_period' | 'earnings_week' | 'open_window' | 'mid_quarter' | 'unknown';
+
+interface IRCycleInfo {
+  stage: IRCycleStage;
+  label: string;
+  opportunity: 'high' | 'medium' | 'low';
+  color: string;
+  tooltip: string;
+}
+
+function calculateIRCycle(lastEarnings: string | null, nextEarnings: string | null): IRCycleInfo {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  // Parse dates in UTC to avoid timezone issues
+  const lastDate = lastEarnings ? new Date(lastEarnings + 'T00:00:00Z') : null;
+  const nextDate = nextEarnings ? new Date(nextEarnings + 'T00:00:00Z') : null;
+
+  // Calculate days since last earnings
+  const daysSinceLast = lastDate
+    ? Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  // Calculate days until next earnings
+  const daysUntilNext = nextDate
+    ? Math.floor((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  // Quiet Period: ≤14 days until next earnings
+  if (daysUntilNext !== null && daysUntilNext <= 14) {
+    return {
+      stage: 'quiet_period',
+      label: 'Quiet Period',
+      opportunity: 'low',
+      color: 'bg-gray-100 text-gray-600',
+      tooltip: 'Limited external comms before earnings. Low outreach opportunity.',
+    };
+  }
+
+  // Earnings Week: ≤7 days since last earnings
+  if (daysSinceLast !== null && daysSinceLast >= 0 && daysSinceLast <= 7) {
+    return {
+      stage: 'earnings_week',
+      label: 'Earnings Week',
+      opportunity: 'low',
+      color: 'bg-gray-100 text-gray-600',
+      tooltip: 'IR team focused on earnings calls and follow-up. Low outreach opportunity.',
+    };
+  }
+
+  // Open Window: 8-45 days since last earnings
+  if (daysSinceLast !== null && daysSinceLast >= 8 && daysSinceLast <= 45) {
+    return {
+      stage: 'open_window',
+      label: 'Open Window',
+      opportunity: 'high',
+      color: 'bg-green-100 text-green-800',
+      tooltip: 'Active investor outreach period. High outreach opportunity.',
+    };
+  }
+
+  // Mid-Quarter: >45 days since last earnings
+  if (daysSinceLast !== null && daysSinceLast > 45) {
+    return {
+      stage: 'mid_quarter',
+      label: 'Mid-Quarter',
+      opportunity: 'medium',
+      color: 'bg-amber-100 text-amber-800',
+      tooltip: 'Between earnings cycles, strategic planning. Medium outreach opportunity.',
+    };
+  }
+
+  // Unknown: no earnings data
+  return {
+    stage: 'unknown',
+    label: '—',
+    opportunity: 'medium',
+    color: 'text-gray-400',
+    tooltip: 'No earnings data available.',
+  };
 }
 
 const columnHelper = createColumnHelper<CompanyPainSummary>();
@@ -49,6 +133,7 @@ export function CompanyTable({
   onDelete,
   signalTypeFilter,
   stockMovementFilter,
+  irCycleFilter,
   showHidden,
 }: CompanyTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
@@ -84,8 +169,17 @@ export function CompanyTable({
       });
     }
 
+    // Filter by IR cycle
+    if (irCycleFilter !== 'all') {
+      result = result.filter((company) => {
+        const fin = financials[company.company_id];
+        const cycle = calculateIRCycle(fin?.last_earnings ?? null, fin?.next_earnings ?? null);
+        return cycle.stage === irCycleFilter;
+      });
+    }
+
     return result;
-  }, [data, financials, hiddenCompanyIds, signalTypeFilter, stockMovementFilter, showHidden]);
+  }, [data, financials, hiddenCompanyIds, signalTypeFilter, stockMovementFilter, irCycleFilter, showHidden]);
 
   const columns = useMemo(
     () => [
@@ -203,6 +297,55 @@ export function CompanyTable({
                 {formatEarningsDate(date)}
               </span>
             );
+          },
+        }
+      ),
+      // IR Cycle stage
+      columnHelper.accessor(
+        (row) => {
+          const fin = financials[row.company_id];
+          return calculateIRCycle(fin?.last_earnings ?? null, fin?.next_earnings ?? null);
+        },
+        {
+          id: 'ir_cycle',
+          header: 'IR Cycle',
+          cell: ({ getValue }) => {
+            const cycle = getValue();
+            return (
+              <span className="relative group inline-flex items-center gap-1">
+                <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${cycle.color}`}>
+                  {cycle.label}
+                </span>
+                {cycle.stage !== 'unknown' && (
+                  <>
+                    <svg
+                      className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 cursor-help"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle cx="12" cy="12" r="10" strokeWidth={2} />
+                      <path strokeLinecap="round" strokeWidth={2} d="M12 16v-4m0-4h.01" />
+                    </svg>
+                    <span className="absolute bottom-full left-0 mb-2 px-3 py-2 text-xs text-white bg-gray-800 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none w-48">
+                      {cycle.tooltip}
+                    </span>
+                  </>
+                )}
+              </span>
+            );
+          },
+          sortingFn: (rowA, rowB) => {
+            const order: Record<IRCycleStage, number> = {
+              open_window: 0,
+              mid_quarter: 1,
+              earnings_week: 2,
+              quiet_period: 3,
+              unknown: 4,
+            };
+            const a = rowA.getValue<IRCycleInfo>('ir_cycle').stage;
+            const b = rowB.getValue<IRCycleInfo>('ir_cycle').stage;
+            return order[a] - order[b];
           },
         }
       ),
