@@ -1,0 +1,16 @@
+# Backend API dependencies
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Database
+supabase>=2.0.0
+
+# AI/ML
+anthropic>=0.18.0
+
+# Data fetching
+httpx>=0.25.0
+yfinance>=0.2.0
+
+# Utils
+pandas>=2.0.0

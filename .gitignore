@@ -1,5 +1,8 @@
 # Secrets
 .streamlit/secrets.toml
+.env
+backend/.env
+frontend/.env
 
 # Python
 __pycache__/
@@ -11,9 +14,17 @@ venv/
 .venv/
 ENV/
 
+# Node
+node_modules/
+dist/
+.cache/
+
 # IDE
 .vscode/
 .idea/
 
 # OS
 .DS_Store
+
+# Build artifacts
+*.log
