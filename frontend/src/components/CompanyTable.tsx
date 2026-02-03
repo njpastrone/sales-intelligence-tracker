@@ -15,6 +15,7 @@ import type { CompanyPainSummary, CompanyFinancials } from '../types';
 import { SIGNAL_LABELS } from '../types';
 import { ExpandedRow } from './ExpandedRow';
 import { ActionButtons } from './ActionButtons';
+import type { StockMovementFilter } from './Filters';
 
 interface CompanyTableProps {
   data: CompanyPainSummary[];
@@ -25,6 +26,7 @@ interface CompanyTableProps {
   onAddNote: (companyId: string, note: string) => void;
   onDelete: (companyId: string) => void;
   signalTypeFilter: string | null;
+  stockMovementFilter: StockMovementFilter;
   showHidden: boolean;
 }
 
@@ -46,6 +48,7 @@ export function CompanyTable({
   onAddNote,
   onDelete,
   signalTypeFilter,
+  stockMovementFilter,
   showHidden,
 }: CompanyTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
@@ -70,8 +73,19 @@ export function CompanyTable({
       );
     }
 
+    // Filter by stock movement
+    if (stockMovementFilter !== 'all') {
+      result = result.filter((company) => {
+        const fin = financials[company.company_id];
+        if (!fin?.price_change_7d) return false;
+        if (stockMovementFilter === 'positive') return fin.price_change_7d >= 0;
+        if (stockMovementFilter === 'negative') return fin.price_change_7d < 0;
+        return true;
+      });
+    }
+
     return result;
-  }, [data, hiddenCompanyIds, signalTypeFilter, showHidden]);
+  }, [data, financials, hiddenCompanyIds, signalTypeFilter, stockMovementFilter, showHidden]);
 
   const columns = useMemo(
     () => [

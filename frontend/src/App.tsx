@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CompanyFinancials } from './types';
 import { CompanyTable } from './components/CompanyTable';
-import { Filters } from './components/Filters';
+import { Filters, type StockMovementFilter } from './components/Filters';
 import { Sidebar } from './components/Sidebar';
 import * as api from './api/client';
 
@@ -21,6 +21,7 @@ function Dashboard() {
   // Filter state
   const [timeWindow, setTimeWindow] = useState(7);
   const [signalTypeFilter, setSignalTypeFilter] = useState<string | null>(null);
+  const [stockMovementFilter, setStockMovementFilter] = useState<StockMovementFilter>('all');
   const [showHidden, setShowHidden] = useState(false);
 
   // Fetch company pain summary
@@ -186,6 +187,8 @@ function Dashboard() {
           onTimeWindowChange={setTimeWindow}
           signalTypeFilter={signalTypeFilter}
           onSignalTypeChange={setSignalTypeFilter}
+          stockMovementFilter={stockMovementFilter}
+          onStockMovementChange={setStockMovementFilter}
           showHidden={showHidden}
           onShowHiddenChange={setShowHidden}
         />
@@ -210,6 +213,7 @@ function Dashboard() {
                 onAddNote={handleAddNote}
                 onDelete={handleDeleteCompany}
                 signalTypeFilter={signalTypeFilter}
+                stockMovementFilter={stockMovementFilter}
                 showHidden={showHidden}
               />
             </div>
