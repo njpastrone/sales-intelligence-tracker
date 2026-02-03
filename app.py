@@ -2,6 +2,8 @@
 # No business logic or API calls here
 
 import os
+from datetime import datetime, date
+
 import streamlit as st
 import pandas as pd
 
@@ -75,6 +77,22 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Pipeline error: {e}")
 
+    # Refresh financials
+    st.divider()
+    st.subheader("Financial Data")
+    if st.button("📈 Refresh Financials", disabled=len(companies) == 0):
+        with st.spinner("Fetching stock data..."):
+            try:
+                import etl
+                stats = etl.refresh_financials()
+                st.success(
+                    f"Done! Refreshed {stats['companies_refreshed']} companies"
+                    + (f", {stats['companies_failed']} failed" if stats['companies_failed'] > 0 else "")
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"Refresh error: {e}")
+
     # Clear data
     st.divider()
     st.subheader("Data Management")
@@ -86,135 +104,262 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Error: {e}")
 
-# Main area - IR Teams in Pain
-try:
-    hot_signals = db.get_hot_signals(limit=5)
-except Exception:
-    hot_signals = []
 
-st.header("🎯 IR Teams in Pain")
-st.caption("Top outreach opportunities ranked by IR pain score")
+def compute_urgency(pain_score: float, age_hours: float) -> str:
+    """Determine urgency level based on pain score and signal age."""
+    hot = config.URGENCY_THRESHOLDS["hot"]
+    warm = config.URGENCY_THRESHOLDS["warm"]
 
-if hot_signals:
-    for s in hot_signals:
-        signal_type = s.get("signal_type", "neutral")
-        icon = config.SIGNAL_ICONS.get(signal_type, "📰")
-        company_name = s["companies"]["name"] if s.get("companies") else "Unknown"
-        pain_score = s.get("sales_relevance", 0.5)
+    if pain_score >= hot["min_pain"] and age_hours <= hot["max_hours"]:
+        return "hot"
+    elif pain_score >= warm["min_pain"] or age_hours <= warm["max_hours"]:
+        return "warm"
+    return "cold"
 
-        # Color based on pain score - red for high pain
-        if pain_score >= 0.7:
-            border_color = "#dc3545"  # Red - high pain
-        elif pain_score >= 0.5:
-            border_color = "#fd7e14"  # Orange - moderate pain
-        else:
-            border_color = "#6c757d"  # Gray - low pain
 
-        st.markdown(
-            f"""<div style="padding: 10px; margin: 5px 0; border-left: 4px solid {border_color}; background: #f8f9fa; border-radius: 4px;">
-            <strong>{icon} {company_name}</strong>: {s['summary']}
-            <span style="color: #666; font-size: 0.9em;">— {signal_type} ({pain_score:.0%} pain)</span>
-            </div>""",
-            unsafe_allow_html=True
-        )
-else:
-    st.info("No pain signals yet. Add companies and run the pipeline.")
+def compute_enhanced_urgency(pain_score: float, age_hours: float, next_earnings: str) -> str:
+    """Determine urgency level with earnings proximity boost.
 
-# Company Overview section
-st.header("📋 Company Overview")
+    If next_earnings is within EARNINGS_URGENCY_DAYS and base urgency is 'warm',
+    boost to 'hot'.
+    """
+    base_urgency = compute_urgency(pain_score, age_hours)
 
-try:
-    company_summaries = db.get_company_signal_summary()
-except Exception:
-    company_summaries = []
+    # Check earnings proximity for urgency boost
+    if next_earnings:
+        try:
+            earnings_date = datetime.strptime(next_earnings, "%Y-%m-%d").date()
+            days_to_earnings = (earnings_date - date.today()).days
+            if 0 <= days_to_earnings <= config.EARNINGS_URGENCY_DAYS:
+                if base_urgency == "warm":
+                    return "hot"  # Boost warm to hot when earnings are imminent
+        except (ValueError, TypeError):
+            pass
 
-if company_summaries:
-    # Create columns for company cards (max 4 per row)
-    cols_per_row = 4
-    for i in range(0, len(company_summaries), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for j, summary in enumerate(company_summaries[i:i+cols_per_row]):
-            with cols[j]:
-                st.markdown(f"**{summary['name']}**")
-                st.caption(f"{summary['total']} signals")
+    return base_urgency
 
-                # Show signal type breakdown with icons
-                type_icons = []
-                for signal_type, count in summary["by_type"].items():
-                    icon = config.SIGNAL_ICONS.get(signal_type, "📰")
-                    type_icons.append(f"{icon}{count}")
 
-                if type_icons:
-                    st.write(" ".join(type_icons))
-else:
-    st.info("No company data yet.")
+def format_price_change(change: float) -> str:
+    """Format price change with icon and color."""
+    if change is None:
+        return "N/A"
+    if change > 0.001:
+        icon = config.PRICE_CHANGE_ICONS["up"]
+        return f"{icon} +{change:.1%}"
+    elif change < -0.001:
+        icon = config.PRICE_CHANGE_ICONS["down"]
+        return f"{icon} {change:.1%}"
+    else:
+        icon = config.PRICE_CHANGE_ICONS["flat"]
+        return f"{icon} {change:.1%}"
 
-# Main area - All Signals
-st.header("📰 All Signals")
 
-# Filters
-col1, col2, col3 = st.columns(3)
+def format_market_cap_tier(tier: str) -> str:
+    """Format market cap tier for display."""
+    if tier == "large":
+        return "Large Cap"
+    elif tier == "mid":
+        return "Mid Cap"
+    elif tier == "small":
+        return "Small Cap"
+    return "N/A"
+
+
+# Main area - Company Pain Dashboard
+st.header("🎯 Outreach Priorities")
+
+# Filters row
+col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
 with col1:
-    company_options = ["All"] + [c["name"] for c in companies]
-    selected_company = st.selectbox("Filter by Company", company_options)
-
+    time_window = st.selectbox(
+        "Time Window",
+        options=config.TIME_WINDOW_OPTIONS,
+        index=config.TIME_WINDOW_OPTIONS.index(config.DEFAULT_TIME_WINDOW),
+        format_func=lambda x: f"Last {x} days"
+    )
 with col2:
-    signal_type_options = ["All"] + list(config.SIGNAL_TYPES.keys())
-    selected_signal_type = st.selectbox("Filter by Signal Type", signal_type_options)
-
+    hide_contacted = st.checkbox("Hide contacted", value=False)
 with col3:
-    min_relevance = st.slider("Minimum Relevance", 0.0, 1.0, config.DEFAULT_RELEVANCE_THRESHOLD)
+    hide_snoozed = st.checkbox("Hide snoozed", value=False)
 
-# Load signals
+# Load company pain summary
 try:
-    company_id = None
-    if selected_company != "All":
-        for c in companies:
-            if c["name"] == selected_company:
-                company_id = c["id"]
-                break
+    company_summaries = db.get_company_pain_summary(days=time_window)
+except Exception as e:
+    company_summaries = []
+    st.warning(f"Could not load data: {e}")
 
-    signal_type_filter = None if selected_signal_type == "All" else selected_signal_type
-
-    signals = db.get_signals(
-        company_id=company_id,
-        min_relevance=min_relevance,
-        signal_type=signal_type_filter
+# Get companies to hide based on filter settings
+companies_to_hide = set()
+if hide_contacted or hide_snoozed:
+    companies_to_hide = db.get_companies_to_hide(
+        contacted_days=config.CONTACTED_HIDE_DAYS if hide_contacted else 0,
+        snoozed_days=config.SNOOZE_DURATION_DAYS if hide_snoozed else 0,
     )
 
-    if signals:
-        # Display as table
-        rows = []
-        for s in signals:
-            signal_type = s.get("signal_type", "neutral")
-            icon = config.SIGNAL_ICONS.get(signal_type, "📰")
-            pain_score = s.get("sales_relevance", 0.5)
+# Filter out hidden companies
+if companies_to_hide:
+    company_summaries = [c for c in company_summaries if c["company_id"] not in companies_to_hide]
 
-            rows.append({
-                "Type": f"{icon} {signal_type}",
-                "Company": s["companies"]["name"] if s.get("companies") else "",
-                "Date": s["articles"]["published_at"][:10] if s.get("articles", {}).get("published_at") else "",
-                "Summary": s["summary"],
-                "Relevance": f"{s['relevance_score']:.0%}",
-                "Pain": f"{pain_score:.0%}",
-                "Source": s["articles"]["source"] if s.get("articles") else "",
-                "URL": s["articles"]["url"] if s.get("articles") else "",
-            })
+# Load financials for all companies
+try:
+    financials_list = db.get_company_financials()
+    financials_lookup = {f["company_id"]: f for f in financials_list}
+except Exception:
+    financials_lookup = {}
 
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+if company_summaries:
+    # Prepare data for CSV export
+    export_rows = []
 
-        # Export button
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Export to CSV",
-            data=csv,
-            file_name="signals_export.csv",
-            mime="text/csv",
-        )
-    else:
-        st.info("No signals found. Add companies and run the pipeline.")
+    for company in company_summaries:
+        name = company["name"]
+        ticker = company.get("ticker")
+        company_id = company["company_id"]
+        display_name = f"{name} ({ticker})" if ticker else name
+        pain_score = company["max_pain_score"]
+        pain_summary = company["max_pain_summary"]
+        signal_count = company["signal_count"]
+        age_hours = company["newest_signal_age_hours"]
+        signals = company["signals"]
 
-except Exception as e:
-    st.warning(f"Could not load signals: {e}")
-    st.info("Make sure database is configured and tables exist.")
+        # Get financials for this company
+        fin = financials_lookup.get(company_id, {})
+        price_change_7d = fin.get("price_change_7d")
+        market_cap_tier = fin.get("market_cap_tier", "unknown")
+        next_earnings = fin.get("next_earnings")
+
+        # Format financial data
+        stock_str = format_price_change(price_change_7d)
+        cap_str = format_market_cap_tier(market_cap_tier)
+        earnings_str = next_earnings if next_earnings else "-"
+
+        # Compute enhanced urgency (considers earnings proximity)
+        urgency = compute_enhanced_urgency(pain_score, age_hours, next_earnings)
+        urgency_display = config.URGENCY_DISPLAY[urgency]
+
+        # Find top talking point from highest pain signal
+        top_talking_point = None
+        for sig in sorted(signals, key=lambda s: s.get("sales_relevance", 0), reverse=True):
+            if sig.get("talking_point"):
+                top_talking_point = sig["talking_point"]
+                break
+
+        # Add to export
+        export_rows.append({
+            "Company": name,
+            "Ticker": ticker or "",
+            "Stock 7d": f"{price_change_7d:.1%}" if price_change_7d is not None else "N/A",
+            "Market Cap": cap_str,
+            "Next Earnings": earnings_str,
+            "Pain Score": f"{pain_score:.0%}",
+            "Top Signal": pain_summary,
+            "Suggested Opener": top_talking_point or "",
+            "Signal Count": signal_count,
+            "Urgency": urgency_display["label"],
+        })
+
+        # Create expander for each company
+        urgency_icon = urgency_display["icon"]
+
+        # Build expander header with financial info
+        header_parts = [
+            f"{urgency_icon} **{display_name}**",
+            f"{stock_str}" if ticker else "",
+            f"{cap_str}" if market_cap_tier != "unknown" else "",
+            f"Earnings: {earnings_str}" if next_earnings else "",
+            f"{pain_score:.0%} pain",
+            f"{signal_count} signals",
+            urgency_display['label'],
+        ]
+        header = " | ".join(p for p in header_parts if p)
+
+        with st.expander(header):
+            # Financial summary row
+            if ticker and fin:
+                fin_col1, fin_col2, fin_col3 = st.columns(3)
+                with fin_col1:
+                    st.metric("Stock (7d)", stock_str)
+                with fin_col2:
+                    st.metric("Market Cap", cap_str)
+                with fin_col3:
+                    st.metric("Next Earnings", earnings_str)
+                st.divider()
+
+            # Show suggested opener if available
+            if top_talking_point:
+                st.markdown(f"💬 **Suggested opener:** *{top_talking_point}*")
+                st.divider()
+
+            # Show pain summary at top
+            st.markdown(f"**Top pain signal:** {pain_summary}")
+            st.divider()
+
+            # Show all signals
+            for signal in signals:
+                signal_type = signal.get("signal_type", "neutral")
+                icon = config.SIGNAL_ICONS.get(signal_type, "📰")
+                signal_pain = signal.get("sales_relevance", 0.5)
+                summary = signal.get("summary", "")
+                article = signal.get("articles", {})
+                source = article.get("source", "Unknown")
+                url = article.get("url", "")
+                published = article.get("published_at", "")[:10] if article.get("published_at") else ""
+
+                # Signal row
+                st.markdown(
+                    f"{icon} **{signal_type}** ({signal_pain:.0%}) — {summary}"
+                )
+                if url:
+                    st.caption(f"[{source}]({url}) • {published}")
+                else:
+                    st.caption(f"{source} • {published}")
+
+            # Outreach actions section
+            st.divider()
+            btn_col1, btn_col2, btn_col3 = st.columns(3)
+
+            with btn_col1:
+                if st.button("✅ Contacted", key=f"contact_{company_id}"):
+                    db.add_outreach_action(company_id, "contacted")
+                    st.rerun()
+
+            with btn_col2:
+                if st.button("😴 Snooze", key=f"snooze_{company_id}"):
+                    db.add_outreach_action(company_id, "snoozed")
+                    st.rerun()
+
+            with btn_col3:
+                note_input = st.text_input(
+                    "Note",
+                    key=f"note_input_{company_id}",
+                    label_visibility="collapsed",
+                    placeholder="Add note..."
+                )
+                if st.button("📝 Add", key=f"note_{company_id}") and note_input:
+                    db.add_outreach_action(company_id, "note", note_input)
+                    st.rerun()
+
+            # Show outreach history
+            last_contact = db.get_last_contact(company_id)
+            if last_contact:
+                st.caption(f"✅ Last contacted: {last_contact['created_at'][:10]}")
+
+            actions = db.get_outreach_actions(company_id)
+            notes = [a for a in actions if a["action_type"] == "note" and a.get("note")]
+            if notes:
+                for n in notes[:3]:
+                    st.caption(f"📝 {n['note']} ({n['created_at'][:10]})")
+
+    # Export button
+    st.divider()
+    df = pd.DataFrame(export_rows)
+    csv = df.to_csv(index=False)
+    st.download_button(
+        label="📥 Export Company Summary to CSV",
+        data=csv,
+        file_name="company_outreach_priorities.csv",
+        mime="text/csv",
+    )
+else:
+    st.info("No signals found. Add companies and run the pipeline.")
