@@ -114,6 +114,23 @@ def add_signal(article_id: str, company_id: str, summary: str, relevance_score: 
     return result.data[0] if result.data else None
 
 
+def add_signals_batch(signals: list) -> list:
+    """Add multiple signals in a single database call.
+
+    Args:
+        signals: List of dicts with keys: article_id, company_id, summary,
+                 relevance_score, signal_type, sales_relevance, talking_point
+
+    Returns:
+        List of inserted signal records
+    """
+    if not signals:
+        return []
+    client = get_client()
+    result = client.table(config.TABLE_SIGNALS).insert(signals).execute()
+    return result.data
+
+
 def clear_signals_and_articles() -> dict:
     """Delete all signals and articles. Returns counts of deleted rows."""
     client = get_client()

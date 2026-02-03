@@ -92,11 +92,51 @@ Return ONLY the talking point, no quotes or labels."""
 # Talking points settings
 TALKING_POINTS_MIN_PAIN = 0.5  # Only generate for signals with pain >= this threshold
 
+# Batch classification prompt (combines classification + talking point)
+BATCH_CLASSIFICATION_PROMPT = """You are helping salespeople identify when IR teams might need help.
+
+Analyze the following headlines about {company_name} and determine if each signals IR team pain.
+
+Headlines to analyze:
+{headlines_block}
+
+Pain signal types:
+- activist_risk: Ownership changes, 13-D filings, activist involvement
+- analyst_negative: Downgrades, price target cuts, coverage drops
+- earnings_miss: Missed estimates, guidance cuts, disappointing results
+- leadership_change: New CEO, CFO, IRO, or major board changes
+- governance_issue: Proxy fights, adverse proxy advisor recommendations
+- esg_negative: ESG rating downgrades, sustainability controversies
+- stock_pressure: Sharp stock drops, short interest spikes
+- capital_stress: Failed offerings, credit downgrades, dividend cuts
+- peer_pressure: Competitor outperformance, market share losses
+
+Use "neutral" for general news that doesn't indicate IR pain.
+
+IR pain scoring: 0.8-1.0 (acute), 0.5-0.7 (moderate), 0.2-0.4 (minor), 0.0-0.2 (none)
+
+Respond with ONLY this JSON:
+{{
+  "results": [
+    {{
+      "headline_index": 0,
+      "summary": "1-2 sentence summary",
+      "signal_type": "type from above",
+      "relevance_score": 0.0-1.0,
+      "ir_pain_score": 0.0-1.0,
+      "talking_point": "1-2 sentence outreach opener (only if ir_pain_score >= 0.5, else null)"
+    }}
+  ]
+}}
+"""
+
 # Earnings urgency settings
 EARNINGS_URGENCY_DAYS = 14  # Boost urgency if earnings within this window
 
 # Pipeline settings
 MAX_ARTICLES_PER_COMPANY = 10  # Limit RSS results to reduce API calls
+BATCH_CLASSIFICATION_SIZE = 8  # Articles per Claude API call
+COMPANY_PARALLELISM = 5  # Concurrent company processing
 
 # Dashboard settings
 DEFAULT_RELEVANCE_THRESHOLD = 0.5

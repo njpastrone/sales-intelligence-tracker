@@ -119,10 +119,17 @@ Run `schema.sql` in Supabase SQL Editor to create tables:
 4. Expand rows to see signals and talking points
 5. Mark as contacted or snooze to manage workflow
 
+## Performance
+
+Fast and efficient:
+- Batch article classification (8 articles per API call)
+- Parallel company processing (5 concurrent workers)
+- Typical run: Process 3 companies in ~5 seconds
+
 ## Cost
 
 ~$5/month total:
-- Claude API: ~$2-3/month for 1000 companies
+- Claude API: ~$0.25-0.50/month for 1000 companies (batch optimized)
 - Render: Free tier or $7/month for always-on
 - Supabase: Free tier
 

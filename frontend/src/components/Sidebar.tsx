@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { PipelineStats, FinancialsRefreshStats } from '../types';
 
 interface SidebarProps {
-  onAddCompany: (name: string, ticker?: string) => Promise<void>;
+  onAddCompany: (name: string, ticker: string) => Promise<void>;
   onRunPipeline: () => Promise<PipelineStats>;
   onRefreshFinancials: () => Promise<FinancialsRefreshStats>;
   totalCompanies: number;
@@ -29,13 +29,13 @@ export function Sidebar({
 
   const handleAddCompany = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!companyName.trim()) return;
+    if (!companyName.trim() || !ticker.trim()) return;
 
     setIsAddingCompany(true);
     setMessage(null);
 
     try {
-      await onAddCompany(companyName.trim(), ticker.trim() || undefined);
+      await onAddCompany(companyName.trim(), ticker.trim());
       setCompanyName('');
       setTicker('');
       setMessage({ type: 'success', text: 'Company added successfully!' });
@@ -125,13 +125,15 @@ export function Sidebar({
               type="text"
               value={ticker}
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              placeholder="Ticker (optional)"
+              placeholder="Ticker *"
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              required
             />
+            <p className="text-xs text-gray-400 mt-1">Required for stock data</p>
           </div>
           <button
             type="submit"
-            disabled={isAddingCompany || !companyName.trim()}
+            disabled={isAddingCompany || !companyName.trim() || !ticker.trim()}
             className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isAddingCompany ? 'Adding...' : 'Add Company'}

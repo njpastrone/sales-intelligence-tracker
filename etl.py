@@ -2,6 +2,8 @@
 # Uses db module for storage, no raw SQL or UI code here
 
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 import xml.etree.ElementTree as ET
@@ -11,6 +13,8 @@ import anthropic
 import yfinance as yf
 
 import config
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_news_rss(company_name: str, ticker: str = None) -> list:
@@ -159,8 +163,103 @@ def classify_article(title: str, source: str, company_name: str) -> dict:
     }
 
 
+def _parse_batch_response(response_text: str, articles: list) -> list:
+    """Parse batch classification response and map results to articles.
+
+    Args:
+        response_text: Raw JSON response from Claude
+        articles: Original articles list for reference
+
+    Returns:
+        List of dicts with classification + article_index for mapping
+    """
+    result = None
+    try:
+        result = json.loads(response_text)
+    except json.JSONDecodeError:
+        # Try stripping markdown code blocks
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            cleaned = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+        try:
+            result = json.loads(cleaned)
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse batch classification response")
+            return []
+
+    if not result or "results" not in result:
+        return []
+
+    parsed = []
+    for item in result["results"]:
+        idx = item.get("headline_index", -1)
+        if idx < 0 or idx >= len(articles):
+            continue
+
+        signal_type = item.get("signal_type", "neutral")
+        if signal_type not in config.SIGNAL_TYPES:
+            signal_type = "neutral"
+
+        ir_pain_score = float(item.get("ir_pain_score", 0.5))
+        talking_point = item.get("talking_point")
+
+        # Only include talking point if pain is high enough
+        if ir_pain_score < config.TALKING_POINTS_MIN_PAIN:
+            talking_point = None
+
+        parsed.append({
+            "article_index": idx,
+            "summary": item.get("summary", ""),
+            "signal_type": signal_type,
+            "relevance_score": float(item.get("relevance_score", 0.5)),
+            "sales_relevance": ir_pain_score,
+            "talking_point": talking_point,
+        })
+
+    return parsed
+
+
+def batch_classify_articles(articles: list, company_name: str) -> list:
+    """Classify multiple articles in a single Claude API call.
+
+    Args:
+        articles: List of article dicts with 'title' and 'source' keys
+        company_name: Name of the company for context
+
+    Returns:
+        List of classification dicts with article_index for mapping back
+    """
+    if not articles:
+        return []
+
+    client = anthropic.Anthropic()
+
+    # Build headlines block with indices
+    headlines_lines = []
+    for i, article in enumerate(articles):
+        headlines_lines.append(f"[{i}] {article['title']} (Source: {article['source']})")
+
+    prompt = config.BATCH_CLASSIFICATION_PROMPT.format(
+        company_name=company_name,
+        headlines_block="\n".join(headlines_lines),
+    )
+
+    # Scale max tokens based on batch size
+    max_tokens = min(config.CLAUDE_MAX_TOKENS * len(articles), 4000)
+
+    message = client.messages.create(
+        model=config.CLAUDE_MODEL,
+        max_tokens=max_tokens,
+        temperature=config.CLAUDE_TEMPERATURE,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return _parse_batch_response(message.content[0].text, articles)
+
+
 def process_company(company: dict) -> dict:
-    """Fetch and classify news for a single company.
+    """Fetch and classify news for a single company using batch processing.
 
     Args:
         company: dict with id, name, ticker, aliases
@@ -180,16 +279,21 @@ def process_company(company: dict) -> dict:
     all_urls = [a["url"] for a in articles]
     existing_urls = db.get_existing_urls(all_urls)
 
+    # Filter to new, relevant articles
+    new_articles = []
     for article in articles:
-        # Skip if already processed
         if article["url"] in existing_urls:
             continue
-
-        # Skip if title doesn't mention the company (avoid irrelevant articles)
         if not title_mentions_company(article["title"], company["name"], company.get("ticker")):
             continue
+        new_articles.append(article)
 
-        # Add article to database
+    if not new_articles:
+        return stats
+
+    # Insert articles to DB and build mapping
+    article_db_map = {}  # index -> db_article
+    for i, article in enumerate(new_articles):
         db_article = db.add_article(
             company_id=company["id"],
             title=article["title"],
@@ -197,53 +301,99 @@ def process_company(company: dict) -> dict:
             source=article["source"],
             published_at=article["published_at"],
         )
+        if db_article:
+            article_db_map[i] = db_article
+            stats["articles_new"] += 1
 
-        if not db_article:
-            continue
+    if not article_db_map:
+        return stats
 
-        stats["articles_new"] += 1
+    # Batch classify articles (up to BATCH_CLASSIFICATION_SIZE at a time)
+    all_classifications = []
+    batch_size = config.BATCH_CLASSIFICATION_SIZE
 
-        # Classify with Claude
+    for batch_start in range(0, len(new_articles), batch_size):
+        batch = new_articles[batch_start:batch_start + batch_size]
+        batch_indices = list(range(batch_start, batch_start + len(batch)))
+
         try:
-            classification = classify_article(
-                title=article["title"],
-                source=article["source"],
-                company_name=company["name"],
-            )
+            classifications = batch_classify_articles(batch, company["name"])
 
-            # Generate talking point for high-pain signals
-            talking_point = None
-            if classification["sales_relevance"] >= config.TALKING_POINTS_MIN_PAIN:
+            # Remap article_index from batch-relative to absolute
+            for c in classifications:
+                c["article_index"] = batch_indices[c["article_index"]]
+            all_classifications.extend(classifications)
+
+        except Exception as e:
+            # Fallback: classify individually if batch fails
+            logger.warning(f"Batch classification failed for {company['name']}, falling back: {e}")
+            for i, article in enumerate(batch):
+                abs_idx = batch_indices[i]
+                if abs_idx not in article_db_map:
+                    continue
                 try:
-                    talking_point = generate_talking_point(
-                        signal_type=classification["signal_type"],
-                        summary=classification["summary"],
+                    classification = classify_article(
+                        title=article["title"],
+                        source=article["source"],
                         company_name=company["name"],
                     )
+                    # Generate talking point separately for fallback
+                    talking_point = None
+                    if classification["sales_relevance"] >= config.TALKING_POINTS_MIN_PAIN:
+                        try:
+                            talking_point = generate_talking_point(
+                                signal_type=classification["signal_type"],
+                                summary=classification["summary"],
+                                company_name=company["name"],
+                            )
+                        except Exception:
+                            pass
+                    classification["article_index"] = abs_idx
+                    classification["talking_point"] = talking_point
+                    all_classifications.append(classification)
                 except Exception:
-                    # Continue without talking point if generation fails
-                    pass
+                    continue
 
-            # Save signal
-            db.add_signal(
-                article_id=db_article["id"],
-                company_id=company["id"],
-                summary=classification["summary"],
-                relevance_score=classification["relevance_score"],
-                signal_type=classification["signal_type"],
-                sales_relevance=classification["sales_relevance"],
-                talking_point=talking_point,
-            )
-            stats["signals_created"] += 1
-        except Exception:
-            # Skip this article if classification fails, continue with others
+    # Build signals for batch insert
+    signals_to_insert = []
+    for c in all_classifications:
+        idx = c["article_index"]
+        if idx not in article_db_map:
             continue
+
+        db_article = article_db_map[idx]
+        signal_data = {
+            "article_id": db_article["id"],
+            "company_id": company["id"],
+            "summary": c["summary"],
+            "relevance_score": c["relevance_score"],
+            "signal_type": c["signal_type"],
+            "sales_relevance": c["sales_relevance"],
+        }
+        if c.get("talking_point"):
+            signal_data["talking_point"] = c["talking_point"]
+        signals_to_insert.append(signal_data)
+
+    # Batch insert signals
+    if signals_to_insert:
+        try:
+            db.add_signals_batch(signals_to_insert)
+            stats["signals_created"] = len(signals_to_insert)
+        except Exception as e:
+            # Fallback: insert individually if batch fails
+            logger.warning(f"Batch signal insert failed, falling back: {e}")
+            for signal_data in signals_to_insert:
+                try:
+                    db.add_signal(**signal_data)
+                    stats["signals_created"] += 1
+                except Exception:
+                    continue
 
     return stats
 
 
 def run_pipeline() -> dict:
-    """Run full ETL pipeline for all active companies.
+    """Run full ETL pipeline for all active companies with parallel processing.
 
     Returns:
         dict with total stats
@@ -252,13 +402,34 @@ def run_pipeline() -> dict:
 
     companies = db.get_companies(active_only=True)
 
-    totals = {"companies": len(companies), "articles_fetched": 0, "articles_new": 0, "signals_created": 0}
+    totals = {
+        "companies": len(companies),
+        "articles_fetched": 0,
+        "articles_new": 0,
+        "signals_created": 0,
+        "errors": 0,
+    }
 
-    for company in companies:
-        stats = process_company(company)
-        totals["articles_fetched"] += stats["articles_fetched"]
-        totals["articles_new"] += stats["articles_new"]
-        totals["signals_created"] += stats["signals_created"]
+    if not companies:
+        return totals
+
+    # Process companies in parallel
+    with ThreadPoolExecutor(max_workers=config.COMPANY_PARALLELISM) as executor:
+        future_to_company = {
+            executor.submit(process_company, company): company
+            for company in companies
+        }
+
+        for future in as_completed(future_to_company):
+            company = future_to_company[future]
+            try:
+                stats = future.result()
+                totals["articles_fetched"] += stats["articles_fetched"]
+                totals["articles_new"] += stats["articles_new"]
+                totals["signals_created"] += stats["signals_created"]
+            except Exception as e:
+                logger.error(f"Error processing {company.get('name', 'unknown')}: {e}")
+                totals["errors"] += 1
 
     return totals
 

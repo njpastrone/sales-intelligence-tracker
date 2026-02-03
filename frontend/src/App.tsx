@@ -84,13 +84,14 @@ function Dashboard() {
 
   const refreshFinancialsMutation = useMutation({
     mutationFn: api.refreshFinancials,
-    onSuccess: () => {
-      queryClientInstance.invalidateQueries({ queryKey: ['financials'] });
+    onSuccess: async () => {
+      // Use refetchQueries to ensure data is updated before showing success
+      await queryClientInstance.refetchQueries({ queryKey: ['financials'] });
     },
   });
 
   // Handlers
-  const handleAddCompany = async (name: string, ticker?: string) => {
+  const handleAddCompany = async (name: string, ticker: string) => {
     await addCompanyMutation.mutateAsync({ name, ticker });
   };
 
