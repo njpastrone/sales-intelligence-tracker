@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -11,8 +11,8 @@ import {
   type ExpandedState,
   type ColumnFiltersState,
 } from '@tanstack/react-table';
-import type { CompanyPainSummary, CompanyFinancials, UrgencyLevel } from '../types';
-import { getUrgencyLevel, URGENCY_CONFIG, SIGNAL_ICONS } from '../types';
+import type { CompanyPainSummary, CompanyFinancials } from '../types';
+import { SIGNAL_ICONS, SIGNAL_LABELS } from '../types';
 import { ExpandedRow } from './ExpandedRow';
 import { ActionButtons } from './ActionButtons';
 
@@ -23,9 +23,16 @@ interface CompanyTableProps {
   onMarkContacted: (companyId: string) => void;
   onSnooze: (companyId: string) => void;
   onAddNote: (companyId: string, note: string) => void;
+  onDelete: (companyId: string) => void;
   signalTypeFilter: string | null;
-  urgencyFilter: UrgencyLevel | null;
   showHidden: boolean;
+}
+
+// Format earnings date as "Feb 5" or "Apr 29"
+// Use UTC methods to avoid timezone shift (API returns date-only strings like "2026-04-30")
+function formatEarningsDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 const columnHelper = createColumnHelper<CompanyPainSummary>();
@@ -37,8 +44,8 @@ export function CompanyTable({
   onMarkContacted,
   onSnooze,
   onAddNote,
+  onDelete,
   signalTypeFilter,
-  urgencyFilter,
   showHidden,
 }: CompanyTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
@@ -63,42 +70,26 @@ export function CompanyTable({
       );
     }
 
-    // Filter by urgency level
-    if (urgencyFilter) {
-      result = result.filter((company) => {
-        const urgency = getUrgencyLevel(
-          company.max_pain_score,
-          company.newest_signal_age_hours
-        );
-        return urgency === urgencyFilter;
-      });
-    }
-
     return result;
-  }, [data, hiddenCompanyIds, signalTypeFilter, urgencyFilter, showHidden]);
+  }, [data, hiddenCompanyIds, signalTypeFilter, showHidden]);
 
   const columns = useMemo(
     () => [
-      columnHelper.display({
-        id: 'expander',
-        header: () => null,
-        cell: ({ row }) =>
-          row.getCanExpand() ? (
-            <button
-              onClick={row.getToggleExpandedHandler()}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
-            >
-              {row.getIsExpanded() ? '▼' : '▶'}
-            </button>
-          ) : null,
-        size: 40,
-      }),
+      // Company column with expand toggle
       columnHelper.accessor('name', {
         header: 'Company',
         cell: ({ row, getValue }) => {
           const isHidden = hiddenCompanyIds.has(row.original.company_id);
           return (
             <div className="flex items-center gap-2">
+              {row.getCanExpand() && (
+                <button
+                  onClick={row.getToggleExpandedHandler()}
+                  className="p-1 hover:bg-gray-100 rounded transition-colors text-gray-500"
+                >
+                  {row.getIsExpanded() ? '▼' : '▶'}
+                </button>
+              )}
               <span className={isHidden ? 'text-gray-400' : 'font-medium'}>
                 {getValue()}
               </span>
@@ -116,61 +107,44 @@ export function CompanyTable({
           );
         },
       }),
-      columnHelper.accessor('max_pain_score', {
-        header: 'Pain Score',
+      // What's Happening - AI summary
+      columnHelper.accessor('max_pain_summary', {
+        header: "What's Happening",
         cell: ({ getValue }) => {
-          const score = getValue();
-          const percentage = Math.round(score * 100);
-          const bgColor =
-            score >= 0.7
-              ? 'bg-red-100 text-red-800'
-              : score >= 0.5
-                ? 'bg-orange-100 text-orange-800'
-                : 'bg-gray-100 text-gray-600';
+          const summary = getValue();
+          if (!summary) return <span className="text-gray-400 text-sm">No recent signals</span>;
           return (
-            <span className={`px-2 py-1 rounded text-sm font-medium ${bgColor}`}>
-              {percentage}%
-            </span>
+            <p className="text-sm text-gray-700">{summary}</p>
           );
         },
-        sortingFn: 'basic',
+        size: 350,
       }),
+      // Signal Type with icon and severity indicator
       columnHelper.accessor(
-        (row) => getUrgencyLevel(row.max_pain_score, row.newest_signal_age_hours),
+        (row) => row.signals[0]?.signal_type || 'neutral',
         {
-          id: 'urgency',
-          header: 'Urgency',
-          cell: ({ getValue }) => {
-            const urgency = getValue();
-            const config = URGENCY_CONFIG[urgency];
+          id: 'top_signal_type',
+          header: 'IR Pain Point',
+          cell: ({ getValue, row }) => {
+            const type = getValue();
+            const pain = row.original.max_pain_score;
+            const icon = SIGNAL_ICONS[type];
+            const label = SIGNAL_LABELS[type];
+            const severityColor =
+              pain >= 0.7
+                ? 'bg-red-100 text-red-800'
+                : pain >= 0.5
+                  ? 'bg-orange-100 text-orange-800'
+                  : 'bg-gray-100 text-gray-600';
             return (
-              <span
-                className="px-2 py-1 rounded text-sm font-medium"
-                style={{ backgroundColor: config.bgColor, color: config.color }}
-              >
-                {config.icon} {config.label}
+              <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${severityColor}`}>
+                {icon} {label}
               </span>
             );
           },
         }
       ),
-      columnHelper.accessor('signal_count', {
-        header: 'Signals',
-        cell: ({ getValue, row }) => {
-          // Get unique signal types for icons
-          const signalTypes = [
-            ...new Set(row.original.signals.map((s) => s.signal_type)),
-          ];
-          return (
-            <div className="flex items-center gap-1">
-              <span className="font-medium">{getValue()}</span>
-              <span className="text-sm">
-                {signalTypes.slice(0, 3).map((type) => SIGNAL_ICONS[type]).join(' ')}
-              </span>
-            </div>
-          );
-        },
-      }),
+      // Stock - 7D price change
       columnHelper.accessor(
         (row) => {
           const fin = financials[row.company_id];
@@ -178,14 +152,14 @@ export function CompanyTable({
         },
         {
           id: 'price_change',
-          header: '7D Price',
+          header: 'Stock (7D)',
           cell: ({ getValue }) => {
             const change = getValue();
             if (change === null) return <span className="text-gray-400">—</span>;
             const percentage = (change * 100).toFixed(1);
             const isPositive = change >= 0;
             return (
-              <span className={isPositive ? 'text-green-600' : 'text-red-600'}>
+              <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
                 {isPositive ? '+' : ''}
                 {percentage}%
               </span>
@@ -193,32 +167,65 @@ export function CompanyTable({
           },
         }
       ),
-      columnHelper.accessor('newest_signal_age_hours', {
-        header: 'Last Signal',
-        cell: ({ getValue }) => {
-          const hours = getValue();
-          if (hours === Infinity) return <span className="text-gray-400">—</span>;
-          if (hours < 1) return 'Just now';
-          if (hours < 24) return `${Math.round(hours)}h ago`;
-          const days = Math.round(hours / 24);
-          return `${days}d ago`;
-        },
-      }),
+      // Last Earnings date
+      columnHelper.accessor(
+        (row) => financials[row.company_id]?.last_earnings ?? null,
+        {
+          id: 'last_earnings',
+          header: 'Last Earnings',
+          cell: ({ getValue }) => {
+            const date = getValue();
+            if (!date) return <span className="text-gray-400">—</span>;
+            return (
+              <span className="text-sm text-gray-700">
+                {formatEarningsDate(date)}
+              </span>
+            );
+          },
+        }
+      ),
+      // Next Earnings date
+      columnHelper.accessor(
+        (row) => financials[row.company_id]?.next_earnings ?? null,
+        {
+          id: 'next_earnings',
+          header: 'Next Earnings',
+          cell: ({ getValue }) => {
+            const date = getValue();
+            if (!date) return <span className="text-gray-400">—</span>;
+            return (
+              <span className="text-sm text-gray-700">
+                {formatEarningsDate(date)}
+              </span>
+            );
+          },
+        }
+      ),
+      // Actions column
       columnHelper.display({
         id: 'actions',
         header: 'Actions',
         cell: ({ row }) => (
           <ActionButtons
             companyId={row.original.company_id}
+            companyName={row.original.name}
             onMarkContacted={onMarkContacted}
             onSnooze={onSnooze}
             onAddNote={onAddNote}
+            onDelete={onDelete}
           />
         ),
-        size: 180,
+        size: 220,
+      }),
+      // Hidden column for sorting by pain score
+      columnHelper.accessor('max_pain_score', {
+        header: () => null,
+        cell: () => null,
+        sortingFn: 'basic',
+        enableHiding: true,
       }),
     ],
-    [financials, hiddenCompanyIds, onMarkContacted, onSnooze, onAddNote]
+    [financials, hiddenCompanyIds, onMarkContacted, onSnooze, onAddNote, onDelete]
   );
 
   const table = useReactTable({
@@ -275,9 +282,8 @@ export function CompanyTable({
         </thead>
         <tbody>
           {table.getRowModel().rows.map((row) => (
-            <>
+            <Fragment key={row.id}>
               <tr
-                key={row.id}
                 className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                   row.getIsExpanded() ? 'bg-blue-50' : ''
                 }`}
@@ -289,7 +295,7 @@ export function CompanyTable({
                 ))}
               </tr>
               {row.getIsExpanded() && (
-                <tr key={`${row.id}-expanded`}>
+                <tr>
                   <td colSpan={columns.length} className="p-0">
                     <ExpandedRow
                       company={row.original}
@@ -298,7 +304,7 @@ export function CompanyTable({
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>

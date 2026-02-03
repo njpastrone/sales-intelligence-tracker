@@ -491,35 +491,51 @@ def fetch_company_financials(ticker: str) -> dict:
         except Exception:
             pass
 
-        # Earnings dates
-        try:
-            calendar = stock.calendar
-            # calendar can be a DataFrame or dict depending on yfinance version
-            if calendar is not None:
-                if hasattr(calendar, "get"):
-                    # Dict format (newer yfinance)
-                    earnings_date = calendar.get("Earnings Date")
-                    if earnings_date:
-                        if isinstance(earnings_date, list) and len(earnings_date) > 0:
-                            result["next_earnings"] = earnings_date[0].strftime("%Y-%m-%d")
-                elif hasattr(calendar, "empty") and not calendar.empty:
-                    # DataFrame format (older yfinance)
-                    if "Earnings Date" in calendar.columns:
-                        dates = calendar["Earnings Date"].dropna()
-                        if len(dates) > 0:
-                            result["next_earnings"] = dates.iloc[0].strftime("%Y-%m-%d")
-        except Exception:
-            pass
-
-        # Try to get last earnings from earnings history
+        # Earnings dates - use earnings_dates as primary source (more reliable than calendar)
         try:
             earnings_hist = stock.earnings_dates
             if earnings_hist is not None and len(earnings_hist) > 0:
-                past_dates = earnings_hist[earnings_hist.index <= datetime.now()]
+                # Use timezone-aware comparison
+                now = datetime.now(earnings_hist.index.tz) if earnings_hist.index.tz else datetime.now()
+
+                # Future dates (no reported EPS yet) = next earnings
+                future_dates = earnings_hist[earnings_hist.index > now]
+                if len(future_dates) > 0:
+                    # Sort ascending to get the soonest future date
+                    result["next_earnings"] = future_dates.index[-1].strftime("%Y-%m-%d")
+
+                # Past dates = last earnings
+                past_dates = earnings_hist[earnings_hist.index <= now]
                 if len(past_dates) > 0:
+                    # earnings_dates is sorted descending, so index[0] is the most recent past date
                     result["last_earnings"] = past_dates.index[0].strftime("%Y-%m-%d")
         except Exception:
             pass
+
+        # Fallback to calendar for next_earnings if not found
+        if result["next_earnings"] is None:
+            try:
+                calendar = stock.calendar
+                if calendar is not None and hasattr(calendar, "get"):
+                    earnings_date = calendar.get("Earnings Date")
+                    if earnings_date and isinstance(earnings_date, list) and len(earnings_date) > 0:
+                        result["next_earnings"] = earnings_date[0].strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
+        # Fallback: try to extract last earnings from quarterly financials timestamps
+        if result["last_earnings"] is None:
+            try:
+                quarterly = stock.quarterly_financials
+                if quarterly is not None and not quarterly.empty:
+                    # Column headers are the dates of earnings reports
+                    last_report_date = quarterly.columns[0]
+                    if hasattr(last_report_date, 'strftime'):
+                        result["last_earnings"] = last_report_date.strftime("%Y-%m-%d")
+                    else:
+                        result["last_earnings"] = str(last_report_date)[:10]
+            except Exception:
+                pass
 
     except Exception:
         # Return defaults if ticker not found or API fails

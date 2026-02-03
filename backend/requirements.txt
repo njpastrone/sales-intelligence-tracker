@@ -11,6 +11,7 @@ anthropic>=0.18.0
 # Data fetching
 httpx>=0.25.0
 yfinance>=0.2.0
+lxml>=4.9.0
 
 # Utils
 pandas>=2.0.0
