@@ -1,13 +1,11 @@
-import type { SignalType, UrgencyLevel } from '../types';
-import { SIGNAL_LABELS, SIGNAL_ICONS, URGENCY_CONFIG } from '../types';
+import type { SignalType } from '../types';
+import { SIGNAL_LABELS, SIGNAL_ICONS } from '../types';
 
 interface FiltersProps {
   timeWindow: number;
   onTimeWindowChange: (days: number) => void;
   signalTypeFilter: string | null;
   onSignalTypeChange: (type: string | null) => void;
-  urgencyFilter: UrgencyLevel | null;
-  onUrgencyChange: (urgency: UrgencyLevel | null) => void;
   showHidden: boolean;
   onShowHiddenChange: (show: boolean) => void;
 }
@@ -26,15 +24,11 @@ const SIGNAL_TYPES: SignalType[] = [
   'peer_pressure',
 ];
 
-const URGENCY_LEVELS: UrgencyLevel[] = ['hot', 'warm', 'cold'];
-
 export function Filters({
   timeWindow,
   onTimeWindowChange,
   signalTypeFilter,
   onSignalTypeChange,
-  urgencyFilter,
-  onUrgencyChange,
   showHidden,
   onShowHiddenChange,
 }: FiltersProps) {
@@ -71,44 +65,6 @@ export function Filters({
             </option>
           ))}
         </select>
-      </div>
-
-      {/* Urgency Filter */}
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Urgency:</label>
-        <div className="flex gap-1">
-          <button
-            onClick={() => onUrgencyChange(null)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              urgencyFilter === null
-                ? 'bg-gray-800 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            All
-          </button>
-          {URGENCY_LEVELS.map((level) => {
-            const config = URGENCY_CONFIG[level];
-            const isActive = urgencyFilter === level;
-            return (
-              <button
-                key={level}
-                onClick={() => onUrgencyChange(isActive ? null : level)}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                  isActive
-                    ? 'text-white'
-                    : 'hover:opacity-80'
-                }`}
-                style={{
-                  backgroundColor: isActive ? config.color : config.bgColor,
-                  color: isActive ? 'white' : config.color,
-                }}
-              >
-                {config.icon} {level.charAt(0).toUpperCase() + level.slice(1)}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Show Hidden Toggle */}

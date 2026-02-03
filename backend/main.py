@@ -88,6 +88,15 @@ def get_company_summary(days: int = 7):
     return db.get_company_pain_summary(days=days)
 
 
+@app.delete("/api/companies/{company_id}")
+def delete_company(company_id: str):
+    """Delete a company and all related data."""
+    result = db.delete_company(company_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return {"deleted": True, "company_id": company_id}
+
+
 # --- Financials Endpoints ---
 
 @app.get("/api/financials")

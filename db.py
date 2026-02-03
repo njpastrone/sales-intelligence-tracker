@@ -56,6 +56,21 @@ def get_company_by_ticker(ticker: str) -> dict:
     return result.data[0] if result.data else None
 
 
+def delete_company(company_id: str) -> dict:
+    """Delete a company and all related data (signals, articles, financials, outreach)."""
+    client = get_client()
+
+    # Delete related data first (foreign key constraints)
+    client.table(config.TABLE_SIGNALS).delete().eq("company_id", company_id).execute()
+    client.table(config.TABLE_ARTICLES).delete().eq("company_id", company_id).execute()
+    client.table(config.TABLE_FINANCIALS).delete().eq("company_id", company_id).execute()
+    client.table(config.TABLE_OUTREACH).delete().eq("company_id", company_id).execute()
+
+    # Delete the company
+    result = client.table(config.TABLE_COMPANIES).delete().eq("id", company_id).execute()
+    return result.data[0] if result.data else None
+
+
 # --- Articles ---
 
 def add_article(company_id: str, title: str, url: str, source: str, published_at: datetime) -> dict:

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UrgencyLevel, CompanyFinancials } from './types';
+import type { CompanyFinancials } from './types';
 import { CompanyTable } from './components/CompanyTable';
 import { Filters } from './components/Filters';
 import { Sidebar } from './components/Sidebar';
@@ -21,7 +21,6 @@ function Dashboard() {
   // Filter state
   const [timeWindow, setTimeWindow] = useState(7);
   const [signalTypeFilter, setSignalTypeFilter] = useState<string | null>(null);
-  const [urgencyFilter, setUrgencyFilter] = useState<UrgencyLevel | null>(null);
   const [showHidden, setShowHidden] = useState(false);
 
   // Fetch company pain summary
@@ -65,6 +64,7 @@ function Dashboard() {
     mutationFn: (data: { name: string; ticker?: string }) => api.addCompany(data),
     onSuccess: () => {
       queryClientInstance.invalidateQueries({ queryKey: ['companySummary'] });
+      queryClientInstance.invalidateQueries({ queryKey: ['financials'] });
     },
   });
 
@@ -79,6 +79,7 @@ function Dashboard() {
     mutationFn: api.runPipeline,
     onSuccess: () => {
       queryClientInstance.invalidateQueries({ queryKey: ['companySummary'] });
+      queryClientInstance.invalidateQueries({ queryKey: ['financials'] });
     },
   });
 
@@ -87,6 +88,14 @@ function Dashboard() {
     onSuccess: async () => {
       // Use refetchQueries to ensure data is updated before showing success
       await queryClientInstance.refetchQueries({ queryKey: ['financials'] });
+    },
+  });
+
+  const deleteCompanyMutation = useMutation({
+    mutationFn: api.deleteCompany,
+    onSuccess: () => {
+      queryClientInstance.invalidateQueries({ queryKey: ['companySummary'] });
+      queryClientInstance.invalidateQueries({ queryKey: ['financials'] });
     },
   });
 
@@ -125,6 +134,10 @@ function Dashboard() {
     return await refreshFinancialsMutation.mutateAsync();
   };
 
+  const handleDeleteCompany = (companyId: string) => {
+    deleteCompanyMutation.mutate(companyId);
+  };
+
   // Calculate totals
   const totalCompanies = companySummary.length;
   const totalSignals = companySummary.reduce((sum, c) => sum + c.signal_count, 0);
@@ -157,8 +170,6 @@ function Dashboard() {
           onTimeWindowChange={setTimeWindow}
           signalTypeFilter={signalTypeFilter}
           onSignalTypeChange={setSignalTypeFilter}
-          urgencyFilter={urgencyFilter}
-          onUrgencyChange={setUrgencyFilter}
           showHidden={showHidden}
           onShowHiddenChange={setShowHidden}
         />
@@ -181,8 +192,8 @@ function Dashboard() {
                 onMarkContacted={handleMarkContacted}
                 onSnooze={handleSnooze}
                 onAddNote={handleAddNote}
+                onDelete={handleDeleteCompany}
                 signalTypeFilter={signalTypeFilter}
-                urgencyFilter={urgencyFilter}
                 showHidden={showHidden}
               />
             </div>

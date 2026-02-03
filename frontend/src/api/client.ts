@@ -48,6 +48,11 @@ export async function getCompanySummary(days = 7): Promise<CompanyPainSummary[]>
   return response.data;
 }
 
+export async function deleteCompany(companyId: string): Promise<{ deleted: boolean; company_id: string }> {
+  const response = await api.delete(`/api/companies/${companyId}`);
+  return response.data;
+}
+
 // --- Financials ---
 
 export async function getFinancials(companyId?: string): Promise<CompanyFinancials[]> {

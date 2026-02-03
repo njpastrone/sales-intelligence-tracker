@@ -12,8 +12,43 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
     (a, b) => b.sales_relevance - a.sales_relevance
   );
 
+  // Calculate last signal age display
+  const getLastSignalDisplay = (hours: number): string => {
+    if (hours === Infinity) return '—';
+    if (hours < 1) return 'Just now';
+    if (hours < 24) return `${Math.round(hours)}h ago`;
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
+  };
+
   return (
     <div className="bg-gray-50 border-l-4 border-blue-500 p-4">
+      {/* Summary Stats Section - moved from main table */}
+      <div className="mb-4 flex flex-wrap gap-4 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">Pain Score:</span>
+          <span
+            className={`px-2 py-0.5 rounded font-medium ${
+              company.max_pain_score >= 0.7
+                ? 'bg-red-100 text-red-800'
+                : company.max_pain_score >= 0.5
+                  ? 'bg-orange-100 text-orange-800'
+                  : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {Math.round(company.max_pain_score * 100)}%
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">Total Signals:</span>
+          <span className="font-medium">{company.signal_count}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">Last Signal:</span>
+          <span className="font-medium">{getLastSignalDisplay(company.newest_signal_age_hours)}</span>
+        </div>
+      </div>
+
       {/* Financials Section */}
       {financials && (
         <div className="mb-4 p-3 bg-white rounded-lg border border-gray-200">
