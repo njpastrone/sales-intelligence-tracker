@@ -1,158 +1,154 @@
-# Collaborating with Claude on This Project
+# Sales Intelligence Tracker
 
-Instructions for AI-assisted development of the Company Signals Tracker.
+AI-powered dashboard for identifying IR team pain signals and prioritizing sales outreach.
 
-## Project Philosophy
+## Architecture
 
-- **Simple over clever**: Readable code, minimal abstractions
-- **Minimal files**: 4 core files (app.py, etl.py, db.py, config.py)
-- **Ship then improve**: Get MVP working, add categories later
-- **Cost-conscious**: Use Haiku, cache everything, batch operations
+```
+Frontend (React)         Backend (FastAPI)        Database (Supabase)
+┌──────────────┐        ┌──────────────┐         ┌──────────────┐
+│ Vite + React │───────▶│ Python API   │────────▶│ PostgreSQL   │
+│ TanStack     │  JSON  │ ETL Pipeline │         │              │
+│ Tailwind CSS │        │ Claude Haiku │         │              │
+└──────────────┘        └──────────────┘         └──────────────┘
+     Render                  Render                 Supabase
+   Static Site            Web Service               Free Tier
+```
+
+## Project Structure
+
+```
+sales-intelligence-tracker/
+├── backend/
+│   ├── main.py           # FastAPI routes
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── components/   # CompanyTable, Filters, Sidebar, etc.
+│   │   ├── api/client.ts
+│   │   └── types/index.ts
+│   ├── package.json
+│   └── vite.config.ts
+├── db.py                 # Database operations (shared)
+├── etl.py                # Data pipeline (shared)
+├── config.py             # Constants, prompts (shared)
+├── schema.sql            # Database schema
+├── app.py                # Legacy Streamlit app
+└── docs/archive/         # Old planning documents
+```
 
 ## File Ownership
 
-| File | Responsibility | Never Put Here |
-|------|---------------|----------------|
-| `app.py` | UI only - Streamlit components, layout | Business logic, API calls |
-| `etl.py` | Data pipeline - fetch, classify, transform | Database queries, UI code |
-| `db.py` | Database operations - CRUD, queries | External API calls, UI code |
-| `config.py` | Constants, settings, prompts | Logic, functions with side effects |
+| File | Responsibility |
+|------|---------------|
+| `backend/main.py` | FastAPI routes, request handling |
+| `frontend/src/App.tsx` | Main React app, state management |
+| `frontend/src/components/` | UI components (table, filters, sidebar) |
+| `frontend/src/api/client.ts` | API client functions |
+| `db.py` | Database operations - CRUD, queries |
+| `etl.py` | Data pipeline - fetch, classify, transform |
+| `config.py` | Constants, settings, AI prompts |
 
 ## Key Constraints
 
-Always keep in mind:
-
-1. **Free tier compatible**: Streamlit Cloud, Supabase free, no paid APIs except Claude
-2. **1000 company scale**: Design for hundreds of companies, not millions
+1. **Cost-conscious**: ~$5/month total (Render free/starter + Supabase free)
+2. **1000 company scale**: Designed for hundreds of companies, not millions
 3. **Single user**: No auth, no multi-tenancy
-4. **Daily batch**: Not real-time, overnight refresh is fine
+4. **Daily batch**: ETL runs on-demand, not real-time
 5. **Claude Haiku only**: Don't upgrade to Sonnet unless necessary
 
-## Working with Claude
+## API Endpoints
 
-### Good Requests
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/companies` | GET | List companies |
+| `/api/companies` | POST | Add company |
+| `/api/companies/summary` | GET | Pain summary for dashboard |
+| `/api/financials` | GET | Stock data |
+| `/api/signals` | GET | Signals with filters |
+| `/api/outreach` | POST | Log outreach action |
+| `/api/outreach/hidden` | GET | Hidden company IDs |
+| `/api/pipeline/run` | POST | Run ETL pipeline |
+| `/api/pipeline/financials` | POST | Refresh stock data |
 
+## Development
+
+### Local Setup
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Frontend
+cd frontend
+npm install
+npm run dev
 ```
-"Add CSV upload to app.py for importing company watchlist"
 
-"Update etl.py to fetch from Google News RSS instead of NewsAPI"
+Backend auto-loads secrets from `.streamlit/secrets.toml` for local dev.
 
-"Add a relevance_score filter to the dashboard, minimum 0.5"
-```
+### Environment Variables
 
-### Better Requests
+**Backend** (Render or `.env`):
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `ANTHROPIC_API_KEY`
 
-```
-"Add CSV upload to app.py for importing companies.
-Columns: name, ticker (optional).
-Skip duplicates by ticker.
-Show count of added/skipped."
-```
+**Frontend** (Render or `.env`):
+- `VITE_API_URL` - Backend URL (no trailing slash)
 
-### If Claude Over-Engineers
+## Deployment (Render)
 
-Remind:
-- "This is an MVP - keep it simple"
-- "No new files unless absolutely necessary"
-- "We can add that feature later"
-- "Does this work on Streamlit free tier?"
+**Backend (Web Service)**:
+- Root: `backend`
+- Build: `pip install -r requirements.txt`
+- Start: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
-## Common Tasks
+**Frontend (Static Site)**:
+- Root: `frontend`
+- Build: `npm install && npm run build`
+- Publish: `dist`
 
-### Add a Company to Watchlist
-1. Insert into `companies` table via `db.py`
-2. No other files need changes
+## Performance Goals
 
-### Modify the AI Prompt
-1. Edit prompt in `config.py`
-2. Test with 3-5 sample articles
-3. Check output parsing in `etl.py` still works
+Current pain points to address:
+- [ ] Initial load time (data fetching)
+- [ ] Table rendering with many signals
+- [ ] Pipeline execution speed
+- [ ] API response times
 
-### Change Dashboard Layout
-1. Edit `app.py` only
-2. Keep single-page structure
-3. Test on narrow viewport (mobile width)
+## UI/UX Goals
 
-### Add a New Signal Category
-1. Update prompt in `config.py` to return category
-2. Update `signals` table schema in `db.py`
-3. Add filter dropdown in `app.py`
+Areas for improvement:
+- [ ] More polished visual design
+- [ ] Better loading states
+- [ ] Mobile responsiveness
+- [ ] Keyboard navigation
+- [ ] Dark mode support
 
-## Prompt Templates
+## Database Schema
 
-Keep prompts in `config.py` with these guidelines:
+See `schema.sql` for full schema. Key tables:
+- `companies` - Watchlist
+- `articles` - Fetched news
+- `signals` - AI-classified signals with pain scores
+- `company_financials` - Stock data from yfinance
+- `outreach_actions` - Contact/snooze tracking
 
-- **Temperature 0.0-0.3** for consistent classification
-- **Max 500 tokens output** to control costs
-- **JSON output** for reliable parsing
-- **Few-shot examples** if classification is inconsistent
+## Testing
 
-## Database Conventions
-
-- Use `uuid` for primary keys
-- Use `created_at` timestamp on all tables
-- Use `active` boolean for soft deletes
-- Deduplicate articles by URL (unique constraint)
+- Manual testing for MVP
+- Test with browser dev tools Network tab
+- Backend: `curl http://localhost:8000/api/health`
+- Check Supabase dashboard for data issues
 
 ## Cost Monitoring
 
-After changes that affect API usage:
-```
-"Estimate the new monthly Claude API cost"
-```
-
-Target: **Under $5/month** for 1000 companies.
-
-## Deployment
-
-### First Deploy Checklist
-- [ ] All secrets in `.streamlit/secrets.toml`
-- [ ] `requirements.txt` complete
-- [ ] Database tables created (init script or auto-create)
-- [ ] No hardcoded paths
-
-### Secrets Required
-```toml
-ANTHROPIC_API_KEY = "sk-..."
-SUPABASE_URL = "https://xxx.supabase.co"
-SUPABASE_KEY = "eyJ..."
-```
-
-## Anti-Patterns
-
-**Avoid**:
-- Separate folders for 4 files
-- Real-time processing (batch is fine)
-- Complex caching (simple dedup by URL is enough)
-- Multiple AI models (Haiku for everything)
-- Enterprise features (auth, teams, audit logs)
-
-**Instead**:
-- Flat file structure
-- Daily batch jobs
-- URL-based deduplication
-- Single model, tune prompts
-- Single user, simple permissions
-
-## Testing Approach
-
-- **Manual testing first**: This is an MVP
-- **Test with 5-10 companies**: Before scaling to 100+
-- **Check Claude output**: Log raw responses during development
-- **Verify deduplication**: Same article shouldn't appear twice
-
-## Getting Unstuck
-
-If something isn't working:
-
-1. Check Streamlit logs in browser console
-2. Add `st.write(variable)` for debugging
-3. Test Claude prompts in the API playground first
-4. Check Supabase dashboard for data issues
-
-## Version Control
-
-- Commit after each working feature
-- Use descriptive commit messages
-- Don't commit `.streamlit/secrets.toml`
-- Keep `requirements.txt` updated
+Target: **Under $5/month** total
+- Claude API: ~$2-3/month for 1000 companies
+- Render: Free tier (with spin-down) or $7/month starter
+- Supabase: Free tier

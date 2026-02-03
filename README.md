@@ -1,13 +1,14 @@
 # Sales Intelligence Tracker
 
-A lightweight tool for tracking IR (Investor Relations) pain signals at public companies to support sales outreach. Monitors news for events that indicate when IR teams might be receptive to vendor outreach.
+A tool for tracking IR (Investor Relations) pain signals at public companies to support sales outreach. Monitors news for events that indicate when IR teams might be receptive to vendor outreach.
 
 ## What It Does
 
 1. **Monitors news** for a watchlist of public companies via Google News RSS
 2. **Classifies signals** using Claude AI to identify IR team pain points
 3. **Scores pain level** to prioritize outreach opportunities
-4. **Surfaces actionable signals** in a simple Streamlit dashboard
+4. **Tracks financials** using yfinance for stock performance context
+5. **Manages outreach** with contact/snooze workflow
 
 ## IR Pain Signals
 
@@ -27,60 +28,103 @@ The tool identifies moments when IR teams are likely under pressure:
 
 ## Tech Stack
 
-- **News Source**: Google News RSS (free, no API limits)
-- **AI Classification**: Claude 3.5 Haiku (~$2/month for 1000 companies)
-- **Database**: Supabase (free tier)
-- **UI**: Streamlit (free hosting)
+- **Frontend**: React + Vite + TanStack Table + Tailwind CSS
+- **Backend**: FastAPI (Python)
+- **AI Classification**: Claude 3.5 Haiku
+- **Database**: Supabase (PostgreSQL)
+- **Financial Data**: yfinance
+- **Hosting**: Render (backend + frontend)
 
 ## Project Structure
 
 ```
 sales-intelligence-tracker/
-├── app.py          # Streamlit dashboard
-├── etl.py          # News fetching + AI classification
-├── db.py           # Database operations
-├── config.py       # Settings, prompts, constants
-├── requirements.txt
-└── .streamlit/
-    └── secrets.toml  # API keys (not committed)
+├── backend/
+│   ├── main.py           # FastAPI routes
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx       # Main app
+│   │   ├── components/   # Table, filters, sidebar
+│   │   ├── api/          # API client
+│   │   └── types/        # TypeScript types
+│   └── package.json
+├── db.py                 # Database operations
+├── etl.py                # News fetching + AI classification
+├── config.py             # Settings, prompts
+├── schema.sql            # Database schema
+└── app.py                # Legacy Streamlit app
 ```
 
-## Setup
+## Local Development
 
-1. **Clone the repo**
+### Backend
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
 
-3. **Configure secrets** in `.streamlit/secrets.toml`:
-   ```toml
-   ANTHROPIC_API_KEY = "sk-..."
-   SUPABASE_URL = "https://xxx.supabase.co"
-   SUPABASE_KEY = "eyJ..."
-   ```
+### Frontend
 
-4. **Create database tables** in Supabase:
-   - `companies` (id, name, ticker, aliases, active, created_at)
-   - `articles` (id, company_id, title, url, source, published_at, fetched_at)
-   - `signals` (id, article_id, company_id, summary, signal_type, relevance_score, sales_relevance, created_at)
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-5. **Run the app**
-   ```bash
-   streamlit run app.py
-   ```
+### Environment Variables
+
+Create `.streamlit/secrets.toml` (backend reads this for local dev):
+```toml
+ANTHROPIC_API_KEY = "sk-ant-..."
+SUPABASE_URL = "https://xxx.supabase.co"
+SUPABASE_KEY = "eyJ..."
+```
+
+Create `frontend/.env`:
+```
+VITE_API_URL=http://localhost:8000
+```
+
+## Database Setup
+
+Run `schema.sql` in Supabase SQL Editor to create tables:
+- `companies` - Watchlist
+- `articles` - Fetched news
+- `signals` - AI-classified signals
+- `company_financials` - Stock data
+- `outreach_actions` - Contact tracking
+
+## Deployment (Render)
+
+**Backend (Web Service)**:
+- Root Directory: `backend`
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- Environment: `SUPABASE_URL`, `SUPABASE_KEY`, `ANTHROPIC_API_KEY`
+
+**Frontend (Static Site)**:
+- Root Directory: `frontend`
+- Build Command: `npm install && npm run build`
+- Publish Directory: `dist`
+- Environment: `VITE_API_URL` (your backend URL)
 
 ## Usage
 
 1. Add companies to your watchlist (sidebar)
 2. Click "Run Pipeline" to fetch and classify news
-3. View "IR Teams in Pain" for top outreach opportunities
-4. Filter and export signals to CSV
+3. View companies sorted by pain score
+4. Expand rows to see signals and talking points
+5. Mark as contacted or snooze to manage workflow
 
 ## Cost
 
-~$2/month for 1000 companies at daily refresh rate.
+~$5/month total:
+- Claude API: ~$2-3/month for 1000 companies
+- Render: Free tier or $7/month for always-on
+- Supabase: Free tier
 
 ## License
 
