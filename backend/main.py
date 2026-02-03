@@ -70,13 +70,23 @@ def get_companies(active_only: bool = True):
 
 @app.post("/api/companies")
 def add_company(company: CompanyCreate):
-    """Add a company to the watchlist."""
+    """Add a company to the watchlist and fetch initial financials."""
     try:
         result = db.add_company(
             name=company.name,
             ticker=company.ticker,
             aliases=company.aliases,
         )
+
+        # Automatically fetch financials if ticker is provided
+        if company.ticker:
+            try:
+                financials = etl.fetch_company_financials(company.ticker)
+                db.upsert_company_financials(result["id"], financials)
+            except Exception:
+                # Don't fail the company add if financials fetch fails
+                pass
+
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -177,6 +187,17 @@ def refresh_financials():
     """Refresh financial data for companies with stale data."""
     result = etl.refresh_financials()
     return result
+
+
+@app.post("/api/pipeline/update-all")
+def update_all():
+    """Run full pipeline and refresh financials in one call."""
+    pipeline_result = etl.run_pipeline()
+    financials_result = etl.refresh_financials(force=True)
+    return {
+        "pipeline": pipeline_result,
+        "financials": financials_result,
+    }
 
 
 @app.delete("/api/pipeline/clear")

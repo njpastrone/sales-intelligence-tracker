@@ -124,6 +124,14 @@ export async function refreshFinancials(): Promise<FinancialsRefreshStats> {
   return response.data;
 }
 
+export async function updateAll(): Promise<{
+  pipeline: PipelineStats;
+  financials: FinancialsRefreshStats;
+}> {
+  const response = await api.post('/api/pipeline/update-all');
+  return response.data;
+}
+
 export async function clearData(): Promise<{ signals: number; articles: number }> {
   const response = await api.delete('/api/pipeline/clear');
   return response.data;

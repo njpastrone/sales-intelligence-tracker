@@ -544,8 +544,11 @@ def fetch_company_financials(ticker: str) -> dict:
     return result
 
 
-def refresh_financials() -> dict:
+def refresh_financials(force: bool = False) -> dict:
     """Refresh financial data for companies with stale or missing data.
+
+    Args:
+        force: If True, refresh all companies regardless of staleness
 
     Returns:
         dict with stats: companies_refreshed, companies_failed
@@ -554,8 +557,9 @@ def refresh_financials() -> dict:
 
     stats = {"companies_refreshed": 0, "companies_failed": 0}
 
-    # Get companies needing refresh
-    companies = db.get_financials_needing_refresh(hours=config.FINANCIALS_REFRESH_HOURS)
+    # Get companies needing refresh (use hours=0 to force refresh all)
+    hours = 0 if force else config.FINANCIALS_REFRESH_HOURS
+    companies = db.get_financials_needing_refresh(hours=hours)
 
     for company in companies:
         ticker = company.get("ticker")

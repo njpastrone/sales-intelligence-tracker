@@ -5,6 +5,7 @@ interface SidebarProps {
   onAddCompany: (name: string, ticker: string) => Promise<void>;
   onRunPipeline: () => Promise<PipelineStats>;
   onRefreshFinancials: () => Promise<FinancialsRefreshStats>;
+  onUpdateAll: () => Promise<{ pipeline: PipelineStats; financials: FinancialsRefreshStats }>;
   totalCompanies: number;
   totalSignals: number;
   isLoading: boolean;
@@ -14,6 +15,7 @@ export function Sidebar({
   onAddCompany,
   onRunPipeline,
   onRefreshFinancials,
+  onUpdateAll,
   totalCompanies,
   totalSignals,
   isLoading,
@@ -23,6 +25,7 @@ export function Sidebar({
   const [isAddingCompany, setIsAddingCompany] = useState(false);
   const [isPipelineRunning, setIsPipelineRunning] = useState(false);
   const [isRefreshingFinancials, setIsRefreshingFinancials] = useState(false);
+  const [isUpdatingAll, setIsUpdatingAll] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
@@ -89,6 +92,28 @@ export function Sidebar({
     }
   };
 
+  const handleUpdateAll = async () => {
+    setIsUpdatingAll(true);
+    setMessage(null);
+
+    try {
+      const result = await onUpdateAll();
+      setMessage({
+        type: 'success',
+        text: `Updated: ${result.pipeline.signals_created} signals, ${result.financials.companies_refreshed} financials`,
+      });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Update failed',
+      });
+    } finally {
+      setIsUpdatingAll(false);
+    }
+  };
+
+  const isAnyOperationRunning = isPipelineRunning || isRefreshingFinancials || isUpdatingAll;
+
   return (
     <div className="w-80 bg-gray-50 border-r border-gray-200 p-4 flex flex-col gap-6">
       {/* Stats */}
@@ -146,31 +171,45 @@ export function Sidebar({
         <h3 className="font-semibold text-gray-800 mb-3">Data Pipeline</h3>
         <div className="space-y-2">
           <button
-            onClick={handleRunPipeline}
-            disabled={isPipelineRunning || isLoading}
-            className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            onClick={handleUpdateAll}
+            disabled={isAnyOperationRunning || isLoading}
+            className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {isPipelineRunning ? (
+            {isUpdatingAll ? (
               <>
-                <span className="animate-spin">⟳</span> Running...
+                <span className="animate-spin">⟳</span> Updating...
               </>
             ) : (
-              <>🔄 Run Pipeline</>
+              <>🚀 Update Everything</>
             )}
           </button>
-          <button
-            onClick={handleRefreshFinancials}
-            disabled={isRefreshingFinancials || isLoading}
-            className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-          >
-            {isRefreshingFinancials ? (
-              <>
-                <span className="animate-spin">⟳</span> Refreshing...
-              </>
-            ) : (
-              <>📊 Refresh Financials</>
-            )}
-          </button>
+          <div className="border-t border-gray-200 pt-2 mt-2">
+            <p className="text-xs text-gray-400 mb-2">Or run individually:</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleRunPipeline}
+                disabled={isAnyOperationRunning || isLoading}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
+              >
+                {isPipelineRunning ? (
+                  <span className="animate-spin">⟳</span>
+                ) : (
+                  <>🔄 Pipeline</>
+                )}
+              </button>
+              <button
+                onClick={handleRefreshFinancials}
+                disabled={isAnyOperationRunning || isLoading}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
+              >
+                {isRefreshingFinancials ? (
+                  <span className="animate-spin">⟳</span>
+                ) : (
+                  <>📊 Financials</>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -195,6 +234,9 @@ export function Sidebar({
 
       {/* Help Text */}
       <div className="mt-auto text-xs text-gray-500">
+        <p className="mb-1">
+          <strong>Update Everything:</strong> Fetches news, signals & financials
+        </p>
         <p className="mb-1">
           <strong>Pipeline:</strong> Fetches news & classifies signals
         </p>

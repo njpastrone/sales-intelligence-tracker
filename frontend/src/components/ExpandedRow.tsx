@@ -53,7 +53,7 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
       {financials && (
         <div className="mb-4 p-3 bg-white rounded-lg border border-gray-200">
           <h4 className="font-medium text-gray-700 mb-2">Financial Overview</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Market Cap:</span>
               <span className="ml-2 font-medium">
@@ -96,9 +96,15 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
               </span>
             </div>
             <div>
+              <span className="text-gray-500">Last Earnings:</span>
+              <span className="ml-2 font-medium">
+                {financials.last_earnings ? formatEarningsDate(financials.last_earnings) : '—'}
+              </span>
+            </div>
+            <div>
               <span className="text-gray-500">Next Earnings:</span>
               <span className="ml-2 font-medium">
-                {financials.next_earnings || '—'}
+                {financials.next_earnings ? formatEarningsDate(financials.next_earnings) : '—'}
               </span>
             </div>
           </div>
@@ -169,6 +175,11 @@ function formatMarketCap(value: number): string {
   if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
   if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
   return `$${value.toLocaleString()}`;
+}
+
+function formatEarningsDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function formatDate(dateString: string): string {

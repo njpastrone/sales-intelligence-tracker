@@ -91,6 +91,17 @@ function Dashboard() {
     },
   });
 
+  const updateAllMutation = useMutation({
+    mutationFn: api.updateAll,
+    onSuccess: async () => {
+      // Refetch all data to ensure UI is in sync
+      await Promise.all([
+        queryClientInstance.refetchQueries({ queryKey: ['companySummary'] }),
+        queryClientInstance.refetchQueries({ queryKey: ['financials'] }),
+      ]);
+    },
+  });
+
   const deleteCompanyMutation = useMutation({
     mutationFn: api.deleteCompany,
     onSuccess: () => {
@@ -134,6 +145,10 @@ function Dashboard() {
     return await refreshFinancialsMutation.mutateAsync();
   };
 
+  const handleUpdateAll = async () => {
+    return await updateAllMutation.mutateAsync();
+  };
+
   const handleDeleteCompany = (companyId: string) => {
     deleteCompanyMutation.mutate(companyId);
   };
@@ -149,6 +164,7 @@ function Dashboard() {
         onAddCompany={handleAddCompany}
         onRunPipeline={handleRunPipeline}
         onRefreshFinancials={handleRefreshFinancials}
+        onUpdateAll={handleUpdateAll}
         totalCompanies={totalCompanies}
         totalSignals={totalSignals}
         isLoading={isLoadingSummary}
