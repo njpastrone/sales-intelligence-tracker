@@ -1,14 +1,26 @@
 # Sales Intelligence Tracker
 
-A tool for tracking IR (Investor Relations) pain signals at public companies to support sales outreach. Monitors news for events that indicate when IR teams might be receptive to vendor outreach.
+AI-powered dashboard for identifying IR (Investor Relations) pain points at public companies and prioritizing sales outreach. Built collaboratively by a human and Claude AI.
 
 ## What It Does
 
 1. **Monitors news** for a watchlist of public companies via Google News RSS
-2. **Classifies signals** using Claude AI to identify IR team pain points
+2. **Classifies pain points** using Claude AI to identify IR team challenges
 3. **Scores pain level** to prioritize outreach opportunities
-4. **Tracks financials** using yfinance for stock performance context
-5. **Manages outreach** with contact/snooze workflow
+4. **Tracks financials** using yfinance for stock performance and earnings dates
+5. **Calculates IR Cycle** to identify optimal outreach timing
+6. **Manages outreach** with contact/snooze workflow
+
+## IR Cycle Timing
+
+The tool calculates where each company is in their IR cycle to optimize outreach timing:
+
+| Stage | Timing | Outreach Opportunity |
+|-------|--------|---------------------|
+| **Open Window** | 8-45 days post-earnings | High - IR team actively engaging investors |
+| **Mid-Quarter** | >45 days post-earnings | Medium - Between cycles, strategic planning |
+| **Earnings Week** | 0-7 days post-earnings | Low - Busy with calls and follow-up |
+| **Quiet Period** | 0-14 days pre-earnings | Low - Limited external communications |
 
 ## IR Pain Signals
 
@@ -113,11 +125,20 @@ Run `schema.sql` in Supabase SQL Editor to create tables:
 
 ## Usage
 
-1. Add companies to your watchlist (sidebar)
-2. Click "Run Pipeline" to fetch and classify news
+1. Add companies to your watchlist (sidebar with ticker symbol)
+2. Click "Update Everything" to fetch news, classify pain points, and update financials
 3. View companies sorted by pain score
-4. Expand rows to see signals and talking points
-5. Mark as contacted or snooze to manage workflow
+4. Filter by IR Pain Point type, Stock movement, or IR Cycle stage
+5. Expand rows to see pain points, talking points, and financial details
+6. Mark as contacted or snooze to manage workflow
+
+## Filters
+
+- **Pain points from**: Time window (7, 14, 30 days)
+- **IR Pain Point**: Filter by specific pain point type
+- **Stock (7D)**: Positive or negative movers
+- **IR Cycle**: Filter by cycle stage (Open Window, Mid-Quarter, etc.)
+- **Include hidden**: Show contacted/snoozed companies
 
 ## Performance
 

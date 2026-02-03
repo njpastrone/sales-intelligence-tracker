@@ -1,10 +1,31 @@
 # Sales Intelligence Tracker
 
-AI-powered dashboard for identifying IR team pain signals and prioritizing sales outreach.
+AI-powered dashboard for identifying IR team pain points and prioritizing sales outreach. Built collaboratively by a human and Claude AI.
 
 **Last updated: 2026-02-03**
 
 ## Recent Updates
+
+### MVP Complete (2026-02-03)
+
+**IR Cycle Feature**:
+- Added IR Cycle column calculating stage from earnings dates
+- Stages: Open Window (high opportunity), Mid-Quarter (medium), Earnings Week (low), Quiet Period (low)
+- Filter by IR Cycle stage
+- Info tooltips explaining each stage with criteria
+
+**UI Overhaul**:
+- Blue/white color scheme throughout
+- Renamed "Signals" to "Pain Points" everywhere
+- Removed all emojis for cleaner look
+- Improved filter labels for clarity
+- Added stock movement filter (positive/negative movers)
+- Fixed action button overflow on small screens
+
+**Pipeline Improvements**:
+- "Update Everything" button combines pipeline + financials refresh
+- Auto-fetch financials when adding new companies
+- Fixed earnings date fetching from yfinance
 
 ### ETL Performance Optimization (2026-02-03)
 - Implemented batch article classification (8 articles per API call)
@@ -88,6 +109,7 @@ sales-intelligence-tracker/
 | `/api/outreach/hidden` | GET | Hidden company IDs |
 | `/api/pipeline/run` | POST | Run ETL pipeline |
 | `/api/pipeline/financials` | POST | Refresh stock data |
+| `/api/pipeline/update-all` | POST | Run pipeline + refresh financials |
 
 ## Development
 
@@ -216,9 +238,13 @@ await queryClientInstance.refetchQueries({ queryKey: ['financials'] });
 
 Recent improvements:
 - [x] Better loading states for financial refresh
+- [x] Blue/white color scheme
+- [x] IR Cycle column with tooltips
+- [x] Improved filter labels and options
+- [x] Renamed "Signals" to "Pain Points" for clarity
+- [x] Action button layout fixes
 
 Areas for improvement:
-- [ ] More polished visual design
 - [ ] Mobile responsiveness
 - [ ] Keyboard navigation
 - [ ] Dark mode support
