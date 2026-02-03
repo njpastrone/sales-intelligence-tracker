@@ -12,7 +12,7 @@ import {
   type ColumnFiltersState,
 } from '@tanstack/react-table';
 import type { CompanyPainSummary, CompanyFinancials } from '../types';
-import { SIGNAL_ICONS, SIGNAL_LABELS } from '../types';
+import { SIGNAL_LABELS } from '../types';
 import { ExpandedRow } from './ExpandedRow';
 import { ActionButtons } from './ActionButtons';
 
@@ -75,26 +75,18 @@ export function CompanyTable({
 
   const columns = useMemo(
     () => [
-      // Company column with expand toggle
+      // Company column
       columnHelper.accessor('name', {
         header: 'Company',
         cell: ({ row, getValue }) => {
           const isHidden = hiddenCompanyIds.has(row.original.company_id);
           return (
             <div className="flex items-center gap-2">
-              {row.getCanExpand() && (
-                <button
-                  onClick={row.getToggleExpandedHandler()}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors text-gray-500"
-                >
-                  {row.getIsExpanded() ? '▼' : '▶'}
-                </button>
-              )}
               <span className={isHidden ? 'text-gray-400' : 'font-medium'}>
                 {getValue()}
               </span>
               {row.original.ticker && (
-                <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                <span className="text-xs text-gray-500 bg-blue-50 px-1.5 py-0.5 rounded">
                   {row.original.ticker}
                 </span>
               )}
@@ -119,7 +111,7 @@ export function CompanyTable({
         },
         size: 350,
       }),
-      // Signal Type with icon and severity indicator
+      // Signal Type with severity indicator
       columnHelper.accessor(
         (row) => row.signals[0]?.signal_type || 'neutral',
         {
@@ -128,17 +120,16 @@ export function CompanyTable({
           cell: ({ getValue, row }) => {
             const type = getValue();
             const pain = row.original.max_pain_score;
-            const icon = SIGNAL_ICONS[type];
             const label = SIGNAL_LABELS[type];
             const severityColor =
               pain >= 0.7
                 ? 'bg-red-100 text-red-800'
                 : pain >= 0.5
-                  ? 'bg-orange-100 text-orange-800'
+                  ? 'bg-amber-100 text-amber-800'
                   : 'bg-gray-100 text-gray-600';
             return (
               <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${severityColor}`}>
-                {icon} {label}
+                {label}
               </span>
             );
           },
@@ -217,6 +208,30 @@ export function CompanyTable({
         ),
         size: 220,
       }),
+      // Expand toggle column (on the right)
+      columnHelper.display({
+        id: 'expand',
+        header: '',
+        cell: ({ row }) =>
+          row.getCanExpand() ? (
+            <button
+              onClick={row.getToggleExpandedHandler()}
+              className="p-1.5 hover:bg-blue-100 rounded transition-colors text-blue-600"
+              title={row.getIsExpanded() ? 'Collapse details' : 'Expand details'}
+            >
+              {row.getIsExpanded() ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              )}
+            </button>
+          ) : null,
+        size: 50,
+      }),
       // Hidden column for sorting by pain score
       columnHelper.accessor('max_pain_score', {
         header: () => null,
@@ -252,11 +267,11 @@ export function CompanyTable({
       <table className="w-full border-collapse">
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id} className="border-b border-gray-200">
+            <tr key={headerGroup.id} className="border-b border-blue-100">
               {headerGroup.headers.map((header) => (
                 <th
                   key={header.id}
-                  className="text-left py-3 px-4 font-medium text-gray-700 bg-gray-50"
+                  className="text-left py-3 px-4 font-medium text-blue-900 bg-blue-50"
                   style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                 >
                   {header.isPlaceholder ? null : (

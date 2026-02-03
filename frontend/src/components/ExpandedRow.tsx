@@ -1,5 +1,5 @@
 import type { CompanyPainSummary, CompanyFinancials } from '../types';
-import { SIGNAL_ICONS, SIGNAL_LABELS } from '../types';
+import { SIGNAL_LABELS } from '../types';
 
 interface ExpandedRowProps {
   company: CompanyPainSummary;
@@ -32,7 +32,7 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
               company.max_pain_score >= 0.7
                 ? 'bg-red-100 text-red-800'
                 : company.max_pain_score >= 0.5
-                  ? 'bg-orange-100 text-orange-800'
+                  ? 'bg-amber-100 text-amber-800'
                   : 'bg-gray-100 text-gray-600'
             }`}
           >
@@ -125,7 +125,6 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">{SIGNAL_ICONS[signal.signal_type]}</span>
                     <span className="text-sm font-medium text-gray-700">
                       {SIGNAL_LABELS[signal.signal_type]}
                     </span>
@@ -134,7 +133,7 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
                         signal.sales_relevance >= 0.7
                           ? 'bg-red-100 text-red-700'
                           : signal.sales_relevance >= 0.5
-                            ? 'bg-orange-100 text-orange-700'
+                            ? 'bg-amber-100 text-amber-700'
                             : 'bg-gray-100 text-gray-600'
                       }`}
                     >

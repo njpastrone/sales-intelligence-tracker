@@ -1,5 +1,5 @@
 import type { SignalType } from '../types';
-import { SIGNAL_LABELS, SIGNAL_ICONS } from '../types';
+import { SIGNAL_LABELS } from '../types';
 
 interface FiltersProps {
   timeWindow: number;
@@ -33,7 +33,7 @@ export function Filters({
   onShowHiddenChange,
 }: FiltersProps) {
   return (
-    <div className="flex flex-wrap items-center gap-4 p-4 bg-white border-b border-gray-200">
+    <div className="flex flex-wrap items-center gap-4 p-4 bg-white border-b border-blue-100">
       {/* Time Window */}
       <div className="flex items-center gap-2">
         <label className="text-sm font-medium text-gray-700">Time:</label>
@@ -61,7 +61,7 @@ export function Filters({
           <option value="">All signals</option>
           {SIGNAL_TYPES.map((type) => (
             <option key={type} value={type}>
-              {SIGNAL_ICONS[type]} {SIGNAL_LABELS[type]}
+              {SIGNAL_LABELS[type]}
             </option>
           ))}
         </select>
