@@ -40,7 +40,7 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-gray-500">Total Signals:</span>
+          <span className="text-gray-500">Pain Points:</span>
           <span className="font-medium">{company.signal_count}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -114,7 +114,7 @@ export function ExpandedRow({ company, financials }: ExpandedRowProps) {
       {/* Signals Section */}
       <div>
         <h4 className="font-medium text-gray-700 mb-3">
-          Signals ({company.signal_count})
+          Pain Points ({company.signal_count})
         </h4>
         <div className="space-y-3">
           {sortedSignals.map((signal) => (

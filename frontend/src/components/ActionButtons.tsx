@@ -87,31 +87,31 @@ export function ActionButtons({
 
   // Default 2x2 grid layout
   return (
-    <div className="grid grid-cols-2 gap-1">
+    <div className="grid grid-cols-2 gap-1 min-w-[140px]">
       <button
         onClick={() => onMarkContacted(companyId)}
-        className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded transition-colors"
+        className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded transition-colors truncate"
         title="Mark as contacted"
       >
         Contacted
       </button>
       <button
         onClick={() => onSnooze(companyId)}
-        className="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded transition-colors"
+        className="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded transition-colors truncate"
         title="Snooze for 7 days"
       >
         Snooze
       </button>
       <button
         onClick={() => setShowNoteInput(true)}
-        className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded transition-colors"
+        className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded transition-colors truncate"
         title="Add a note"
       >
         Note
       </button>
       <button
         onClick={() => setShowDeleteConfirm(true)}
-        className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded transition-colors"
+        className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded transition-colors truncate"
         title="Delete company"
       >
         Delete

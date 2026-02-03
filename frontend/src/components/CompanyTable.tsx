@@ -74,7 +74,7 @@ function calculateIRCycle(lastEarnings: string | null, nextEarnings: string | nu
       label: 'Quiet Period',
       opportunity: 'low',
       color: 'bg-gray-100 text-gray-600',
-      tooltip: 'Limited external comms before earnings. Low outreach opportunity.',
+      tooltip: '≤14 days until next earnings. Limited external comms. Low outreach opportunity.',
     };
   }
 
@@ -85,7 +85,7 @@ function calculateIRCycle(lastEarnings: string | null, nextEarnings: string | nu
       label: 'Earnings Week',
       opportunity: 'low',
       color: 'bg-gray-100 text-gray-600',
-      tooltip: 'IR team focused on earnings calls and follow-up. Low outreach opportunity.',
+      tooltip: '≤7 days since last earnings. IR team focused on calls and follow-up. Low outreach opportunity.',
     };
   }
 
@@ -96,7 +96,7 @@ function calculateIRCycle(lastEarnings: string | null, nextEarnings: string | nu
       label: 'Open Window',
       opportunity: 'high',
       color: 'bg-green-100 text-green-800',
-      tooltip: 'Active investor outreach period. High outreach opportunity.',
+      tooltip: '8-45 days since last earnings. Active investor outreach period. High outreach opportunity.',
     };
   }
 
@@ -107,7 +107,7 @@ function calculateIRCycle(lastEarnings: string | null, nextEarnings: string | nu
       label: 'Mid-Quarter',
       opportunity: 'medium',
       color: 'bg-amber-100 text-amber-800',
-      tooltip: 'Between earnings cycles, strategic planning. Medium outreach opportunity.',
+      tooltip: '>45 days since last earnings. Between cycles, strategic planning. Medium outreach opportunity.',
     };
   }
 
@@ -212,7 +212,7 @@ export function CompanyTable({
         header: "What's Happening",
         cell: ({ getValue }) => {
           const summary = getValue();
-          if (!summary) return <span className="text-gray-400 text-sm">No recent signals</span>;
+          if (!summary) return <span className="text-gray-400 text-sm">No recent pain points</span>;
           return (
             <p className="text-sm text-gray-700">{summary}</p>
           );

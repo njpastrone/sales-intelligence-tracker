@@ -67,7 +67,7 @@ export function Filters({
     <div className="flex flex-wrap items-center gap-4 p-4 bg-white border-b border-blue-100">
       {/* Time Window - clarified label */}
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Signals from:</label>
+        <label className="text-sm font-medium text-gray-700">Pain points from:</label>
         <select
           value={timeWindow}
           onChange={(e) => onTimeWindowChange(Number(e.target.value))}

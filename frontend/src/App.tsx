@@ -178,7 +178,7 @@ function Dashboard() {
         <header className="bg-blue-600 px-6 py-4">
           <h1 className="text-2xl font-bold text-white">Sales Intelligence Tracker</h1>
           <p className="text-sm text-blue-100 mt-1">
-            Monitor IR pain signals for outreach opportunities
+            Monitor IR pain points for outreach opportunities
           </p>
         </header>
 

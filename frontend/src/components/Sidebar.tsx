@@ -40,7 +40,7 @@ export function Sidebar({
       await onAddCompany(companyName.trim(), ticker.trim());
       setCompanyName('');
       setTicker('');
-      setCompanyMessage({ type: 'success', text: 'Company added. Click "Update Everything" to fetch signals and financial data.' });
+      setCompanyMessage({ type: 'success', text: 'Company added. Click "Update Everything" to fetch pain points and financial data.' });
     } catch (error) {
       setCompanyMessage({
         type: 'error',
@@ -59,7 +59,7 @@ export function Sidebar({
       const stats = await onRunPipeline();
       setPipelineMessage({
         type: 'success',
-        text: `Complete: ${stats.signals_created} new signals from ${stats.articles_new} articles`,
+        text: `Complete: ${stats.signals_created} new pain points from ${stats.articles_new} articles`,
       });
     } catch (error) {
       setPipelineMessage({
@@ -100,7 +100,7 @@ export function Sidebar({
       const result = await onUpdateAll();
       setPipelineMessage({
         type: 'success',
-        text: `Updated: ${result.pipeline.signals_created} signals, ${result.financials.companies_refreshed} financials`,
+        text: `Updated: ${result.pipeline.signals_created} pain points, ${result.financials.companies_refreshed} financials`,
       });
     } catch (error) {
       setPipelineMessage({
@@ -126,7 +126,7 @@ export function Sidebar({
           </div>
           <div>
             <div className="text-2xl font-bold text-blue-800">{totalSignals}</div>
-            <div className="text-xs text-gray-500">Signals</div>
+            <div className="text-xs text-gray-500">Pain Points</div>
           </div>
         </div>
       </div>
@@ -238,10 +238,10 @@ export function Sidebar({
       {/* Help Text */}
       <div className="mt-auto text-xs text-gray-500">
         <p className="mb-1">
-          <strong>Update Everything:</strong> Fetches news, signals & financials
+          <strong>Update Everything:</strong> Fetches news, pain points & financials
         </p>
         <p className="mb-1">
-          <strong>Pipeline:</strong> Fetches news & classifies signals
+          <strong>Pipeline:</strong> Fetches news & classifies pain points
         </p>
         <p>
           <strong>Financials:</strong> Updates stock prices & earnings
