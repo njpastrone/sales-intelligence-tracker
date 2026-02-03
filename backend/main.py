@@ -5,7 +5,25 @@ import sys
 import os
 
 # Add parent directory to path to import existing modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+# Load secrets from .streamlit/secrets.toml for local development
+# (In production, use environment variables directly)
+def load_streamlit_secrets():
+    secrets_path = os.path.join(parent_dir, ".streamlit", "secrets.toml")
+    if os.path.exists(secrets_path):
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        with open(secrets_path, "rb") as f:
+            secrets = tomllib.load(f)
+        for key, value in secrets.items():
+            if key not in os.environ:
+                os.environ[key] = str(value)
+
+load_streamlit_secrets()
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -119,12 +137,7 @@ def add_outreach(outreach: OutreachCreate):
     )
 
 
-@app.get("/api/outreach/{company_id}")
-def get_outreach_actions(company_id: str, limit: int = 10):
-    """Get recent outreach actions for a company."""
-    return db.get_outreach_actions(company_id=company_id, limit=limit)
-
-
+# NOTE: /hidden must come BEFORE /{company_id} to avoid route conflict
 @app.get("/api/outreach/hidden")
 def get_hidden_companies(contacted_days: int = 7, snoozed_days: int = 7):
     """Get company IDs that should be hidden (recently contacted or snoozed)."""
@@ -133,6 +146,12 @@ def get_hidden_companies(contacted_days: int = 7, snoozed_days: int = 7):
         snoozed_days=snoozed_days,
     )
     return {"hidden_company_ids": list(hidden)}
+
+
+@app.get("/api/outreach/{company_id}")
+def get_outreach_actions(company_id: str, limit: int = 10):
+    """Get recent outreach actions for a company."""
+    return db.get_outreach_actions(company_id=company_id, limit=limit)
 
 
 # --- Pipeline Endpoints ---
