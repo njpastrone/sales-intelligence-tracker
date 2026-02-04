@@ -102,13 +102,33 @@ export async function getOutreachActions(
   return response.data;
 }
 
+export interface OutreachCompanyDetail {
+  company_id: string;
+  name: string;
+  ticker: string | null;
+  created_at: string;
+}
+
+export interface HiddenCompaniesResponse {
+  contacted: OutreachCompanyDetail[];
+  snoozed: OutreachCompanyDetail[];
+}
+
 export async function getHiddenCompanies(
   contactedDays = 7,
   snoozedDays = 7
-): Promise<{ hidden_company_ids: string[] }> {
+): Promise<HiddenCompaniesResponse> {
   const response = await api.get('/api/outreach/hidden', {
     params: { contacted_days: contactedDays, snoozed_days: snoozedDays },
   });
+  return response.data;
+}
+
+export async function deleteOutreachAction(
+  companyId: string,
+  actionType: string
+): Promise<{ deleted: boolean; company_id: string; action_type: string }> {
+  const response = await api.delete(`/api/outreach/${companyId}/${actionType}`);
   return response.data;
 }
 

@@ -197,20 +197,20 @@ export function Sidebar({
           </button>
           <div className="border-t border-gray-100 pt-2 mt-2">
             <p className="text-xs text-gray-400 mb-2">Or run individually:</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
               <button
                 onClick={handleRunPipeline}
                 disabled={isAnyOperationRunning || isLoading}
-                className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isPipelineRunning ? 'Running...' : 'Pipeline'}
+                {isPipelineRunning ? 'Running...' : 'Pipeline Only'}
               </button>
               <button
                 onClick={handleRefreshFinancials}
                 disabled={isAnyOperationRunning || isLoading}
-                className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isRefreshingFinancials ? 'Refreshing...' : 'Financials'}
+                {isRefreshingFinancials ? 'Refreshing...' : 'Financials Only'}
               </button>
             </div>
           </div>

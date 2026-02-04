@@ -28,7 +28,6 @@ interface CompanyTableProps {
   signalTypeFilter: string | null;
   stockMovementFilter: StockMovementFilter;
   irCycleFilter: IRCycleFilter;
-  showHidden: boolean;
 }
 
 // Format earnings date as "Feb 5" or "Apr 29"
@@ -134,7 +133,6 @@ export function CompanyTable({
   signalTypeFilter,
   stockMovementFilter,
   irCycleFilter,
-  showHidden,
 }: CompanyTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'max_pain_score', desc: true },
@@ -144,12 +142,8 @@ export function CompanyTable({
 
   // Filter data based on hidden companies and filters
   const filteredData = useMemo(() => {
-    let result = data;
-
-    // Filter out hidden companies unless showHidden is true
-    if (!showHidden) {
-      result = result.filter((company) => !hiddenCompanyIds.has(company.company_id));
-    }
+    // Always filter out hidden companies (active only)
+    let result = data.filter((company) => !hiddenCompanyIds.has(company.company_id));
 
     // Filter by signal type
     if (signalTypeFilter) {
@@ -179,7 +173,7 @@ export function CompanyTable({
     }
 
     return result;
-  }, [data, financials, hiddenCompanyIds, signalTypeFilter, stockMovementFilter, irCycleFilter, showHidden]);
+  }, [data, financials, hiddenCompanyIds, signalTypeFilter, stockMovementFilter, irCycleFilter]);
 
   const columns = useMemo(
     () => [
@@ -187,20 +181,14 @@ export function CompanyTable({
       columnHelper.accessor('name', {
         header: 'Company',
         cell: ({ row, getValue }) => {
-          const isHidden = hiddenCompanyIds.has(row.original.company_id);
           return (
             <div className="flex items-center gap-2">
-              <span className={isHidden ? 'text-gray-400' : 'font-medium'}>
+              <span className="font-medium">
                 {getValue()}
               </span>
               {row.original.ticker && (
                 <span className="text-xs text-gray-500 bg-blue-50 px-1.5 py-0.5 rounded">
                   {row.original.ticker}
-                </span>
-              )}
-              {isHidden && (
-                <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                  hidden
                 </span>
               )}
             </div>
@@ -217,7 +205,7 @@ export function CompanyTable({
             <p className="text-sm text-gray-700">{summary}</p>
           );
         },
-        size: 350,
+        size: 500,
       }),
       // Signal Type with severity indicator
       columnHelper.accessor(
@@ -266,36 +254,27 @@ export function CompanyTable({
           },
         }
       ),
-      // Last Earnings date
+      // Earnings dates (combined)
       columnHelper.accessor(
-        (row) => financials[row.company_id]?.last_earnings ?? null,
+        (row) => ({
+          last: financials[row.company_id]?.last_earnings ?? null,
+          next: financials[row.company_id]?.next_earnings ?? null,
+        }),
         {
-          id: 'last_earnings',
-          header: 'Last Earnings',
+          id: 'earnings',
+          header: 'Earnings',
           cell: ({ getValue }) => {
-            const date = getValue();
-            if (!date) return <span className="text-gray-400">—</span>;
+            const { last, next } = getValue();
+            if (!last && !next) return <span className="text-gray-400">—</span>;
             return (
-              <span className="text-sm text-gray-700">
-                {formatEarningsDate(date)}
-              </span>
-            );
-          },
-        }
-      ),
-      // Next Earnings date
-      columnHelper.accessor(
-        (row) => financials[row.company_id]?.next_earnings ?? null,
-        {
-          id: 'next_earnings',
-          header: 'Next Earnings',
-          cell: ({ getValue }) => {
-            const date = getValue();
-            if (!date) return <span className="text-gray-400">—</span>;
-            return (
-              <span className="text-sm text-gray-700">
-                {formatEarningsDate(date)}
-              </span>
+              <div className="text-sm text-gray-700 space-y-0.5 whitespace-nowrap">
+                <div>
+                  <span className="text-gray-500">Last:</span> {last ? formatEarningsDate(last) : '—'}
+                </div>
+                <div>
+                  <span className="text-gray-500">Next:</span> {next ? formatEarningsDate(next) : '—'}
+                </div>
+              </div>
             );
           },
         }
@@ -397,7 +376,7 @@ export function CompanyTable({
         enableHiding: true,
       }),
     ],
-    [financials, hiddenCompanyIds, onMarkContacted, onSnooze, onAddNote, onDelete]
+    [financials, onMarkContacted, onSnooze, onAddNote, onDelete]
   );
 
   const table = useReactTable({

@@ -159,12 +159,29 @@ def add_outreach(outreach: OutreachCreate):
 # NOTE: /hidden must come BEFORE /{company_id} to avoid route conflict
 @app.get("/api/outreach/hidden")
 def get_hidden_companies(contacted_days: int = 7, snoozed_days: int = 7):
-    """Get company IDs that should be hidden (recently contacted or snoozed)."""
-    hidden = db.get_companies_to_hide(
+    """Get detailed info for hidden companies (recently contacted or snoozed)."""
+    result = db.get_outreach_details(
         contacted_days=contacted_days,
         snoozed_days=snoozed_days,
     )
-    return {"hidden_company_ids": list(hidden)}
+    return {
+        "contacted": result["contacted"],
+        "snoozed": result["snoozed"],
+    }
+
+
+@app.delete("/api/outreach/{company_id}/{action_type}")
+def delete_outreach_action(company_id: str, action_type: str):
+    """Delete the most recent outreach action of given type for a company."""
+    if action_type not in config.OUTREACH_ACTION_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action_type. Must be one of: {list(config.OUTREACH_ACTION_TYPES.keys())}",
+        )
+    deleted = db.delete_outreach_action(company_id, action_type)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No action found to delete")
+    return {"deleted": True, "company_id": company_id, "action_type": action_type}
 
 
 @app.get("/api/outreach/{company_id}")

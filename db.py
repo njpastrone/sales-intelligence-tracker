@@ -378,8 +378,12 @@ def get_last_contact(company_id: str) -> dict:
     return result.data[0] if result.data else None
 
 
-def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7) -> set:
-    """Get company IDs that should be hidden (recently contacted or snoozed)."""
+def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7) -> dict:
+    """Get company IDs that should be hidden (recently contacted or snoozed).
+
+    Returns:
+        dict with 'contacted' and 'snoozed' sets of company IDs
+    """
     client = get_client()
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(contacted_days, snoozed_days))
 
@@ -389,7 +393,8 @@ def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7) -> set
         "created_at", cutoff.isoformat()
     ).execute()
 
-    hide_ids = set()
+    contacted_ids = set()
+    snoozed_ids = set()
     now = datetime.now(timezone.utc)
 
     for action in result.data:
@@ -397,8 +402,74 @@ def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7) -> set
         age_days = (now - created).days
 
         if action["action_type"] == "contacted" and age_days < contacted_days:
-            hide_ids.add(action["company_id"])
+            contacted_ids.add(action["company_id"])
         elif action["action_type"] == "snoozed" and age_days < snoozed_days:
-            hide_ids.add(action["company_id"])
+            snoozed_ids.add(action["company_id"])
 
-    return hide_ids
+    return {"contacted": contacted_ids, "snoozed": snoozed_ids}
+
+
+def delete_outreach_action(company_id: str, action_type: str) -> bool:
+    """Delete all outreach actions of given type for a company.
+
+    Returns:
+        True if any actions were deleted, False otherwise
+    """
+    client = get_client()
+
+    # Delete all actions of this type for the company
+    result = client.table(config.TABLE_OUTREACH).delete().eq(
+        "company_id", company_id
+    ).eq("action_type", action_type).execute()
+
+    return len(result.data) > 0
+
+
+def get_outreach_details(contacted_days: int = 7, snoozed_days: int = 7) -> dict:
+    """Get detailed outreach info for contacted/snoozed companies.
+
+    Returns:
+        dict with 'contacted' and 'snoozed' lists of dicts containing:
+        - company_id, name, ticker, created_at (outreach timestamp)
+    """
+    client = get_client()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(contacted_days, snoozed_days))
+
+    # Get outreach actions with company info
+    result = client.table(config.TABLE_OUTREACH).select(
+        "company_id, action_type, created_at, companies(name, ticker)"
+    ).in_("action_type", ["contacted", "snoozed"]).gte(
+        "created_at", cutoff.isoformat()
+    ).order("created_at", desc=True).execute()
+
+    contacted = []
+    snoozed = []
+    now = datetime.now(timezone.utc)
+
+    # Track seen company IDs to avoid duplicates (keep most recent)
+    contacted_seen = set()
+    snoozed_seen = set()
+
+    for action in result.data:
+        created = datetime.fromisoformat(action["created_at"].replace("Z", "+00:00"))
+        age_days = (now - created).days
+        company_id = action["company_id"]
+        company = action.get("companies", {}) or {}
+
+        detail = {
+            "company_id": company_id,
+            "name": company.get("name", "Unknown"),
+            "ticker": company.get("ticker"),
+            "created_at": action["created_at"],
+        }
+
+        if action["action_type"] == "contacted" and age_days < contacted_days:
+            if company_id not in contacted_seen:
+                contacted.append(detail)
+                contacted_seen.add(company_id)
+        elif action["action_type"] == "snoozed" and age_days < snoozed_days:
+            if company_id not in snoozed_seen:
+                snoozed.append(detail)
+                snoozed_seen.add(company_id)
+
+    return {"contacted": contacted, "snoozed": snoozed}

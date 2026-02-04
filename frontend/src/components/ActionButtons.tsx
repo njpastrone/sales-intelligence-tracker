@@ -91,14 +91,14 @@ export function ActionButtons({
       <button
         onClick={() => onMarkContacted(companyId)}
         className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded transition-colors truncate"
-        title="Mark as contacted"
+        title="Mark as contacted (moves to Contacted section below)"
       >
         Contacted
       </button>
       <button
         onClick={() => onSnooze(companyId)}
         className="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded transition-colors truncate"
-        title="Snooze for 7 days"
+        title="Snooze for 7 days (moves to Snoozed section below)"
       >
         Snooze
       </button>

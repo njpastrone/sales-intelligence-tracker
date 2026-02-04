@@ -13,8 +13,6 @@ interface FiltersProps {
   onStockMovementChange: (filter: StockMovementFilter) => void;
   irCycleFilter: IRCycleFilter;
   onIRCycleChange: (filter: IRCycleFilter) => void;
-  showHidden: boolean;
-  onShowHiddenChange: (show: boolean) => void;
 }
 
 const TIME_WINDOW_OPTIONS = [7, 14, 30];
@@ -60,8 +58,6 @@ export function Filters({
   onStockMovementChange,
   irCycleFilter,
   onIRCycleChange,
-  showHidden,
-  onShowHiddenChange,
 }: FiltersProps) {
   return (
     <div className="flex flex-wrap items-center gap-4 p-4 bg-white border-b border-blue-100">
@@ -129,19 +125,6 @@ export function Filters({
           <option value="earnings_week">Earnings Week (Low)</option>
           <option value="quiet_period">Quiet Period (Low)</option>
         </select>
-      </div>
-
-      {/* Show Hidden Toggle - clarified label */}
-      <div className="flex items-center gap-2 ml-auto">
-        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showHidden}
-            onChange={(e) => onShowHiddenChange(e.target.checked)}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-          />
-          Include hidden
-        </label>
       </div>
     </div>
   );

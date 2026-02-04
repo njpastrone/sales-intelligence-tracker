@@ -4,6 +4,7 @@ import type { CompanyFinancials } from './types';
 import { CompanyTable } from './components/CompanyTable';
 import { Filters, type StockMovementFilter, type IRCycleFilter } from './components/Filters';
 import { Sidebar } from './components/Sidebar';
+import { OutreachSection } from './components/OutreachSection';
 import * as api from './api/client';
 
 const queryClient = new QueryClient({
@@ -23,7 +24,6 @@ function Dashboard() {
   const [signalTypeFilter, setSignalTypeFilter] = useState<string | null>(null);
   const [stockMovementFilter, setStockMovementFilter] = useState<StockMovementFilter>('all');
   const [irCycleFilter, setIRCycleFilter] = useState<IRCycleFilter>('all');
-  const [showHidden, setShowHidden] = useState(false);
 
   // Fetch company pain summary
   const {
@@ -55,10 +55,17 @@ function Dashboard() {
     return map;
   }, [financialsData]);
 
-  // Convert hidden IDs to Set
+  // Extract contacted and snoozed company lists
+  const contactedCompanies = hiddenData?.contacted || [];
+  const snoozedCompanies = hiddenData?.snoozed || [];
+
+  // Combined set of hidden company IDs for filtering the active table
   const hiddenCompanyIds = useMemo(
-    () => new Set(hiddenData?.hidden_company_ids || []),
-    [hiddenData]
+    () => new Set([
+      ...contactedCompanies.map((c) => c.company_id),
+      ...snoozedCompanies.map((c) => c.company_id),
+    ]),
+    [contactedCompanies, snoozedCompanies]
   );
 
   // Mutations
@@ -112,6 +119,14 @@ function Dashboard() {
     },
   });
 
+  const removeOutreachMutation = useMutation({
+    mutationFn: ({ companyId, actionType }: { companyId: string; actionType: string }) =>
+      api.deleteOutreachAction(companyId, actionType),
+    onSuccess: () => {
+      queryClientInstance.invalidateQueries({ queryKey: ['hiddenCompanies'] });
+    },
+  });
+
   // Handlers
   const handleAddCompany = async (name: string, ticker: string) => {
     await addCompanyMutation.mutateAsync({ name, ticker });
@@ -155,6 +170,14 @@ function Dashboard() {
     deleteCompanyMutation.mutate(companyId);
   };
 
+  const handleUndoContacted = (companyId: string) => {
+    removeOutreachMutation.mutate({ companyId, actionType: 'contacted' });
+  };
+
+  const handleUndoSnoozed = (companyId: string) => {
+    removeOutreachMutation.mutate({ companyId, actionType: 'snoozed' });
+  };
+
   // Calculate totals
   const totalCompanies = companySummary.length;
   const totalSignals = companySummary.reduce((sum, c) => sum + c.signal_count, 0);
@@ -192,11 +215,9 @@ function Dashboard() {
           onStockMovementChange={setStockMovementFilter}
           irCycleFilter={irCycleFilter}
           onIRCycleChange={setIRCycleFilter}
-          showHidden={showHidden}
-          onShowHiddenChange={setShowHidden}
         />
 
-        {/* Table */}
+        {/* Main Content - Stacked Sections */}
         <main className="flex-1 p-6 overflow-auto">
           {isLoadingSummary ? (
             <div className="flex items-center justify-center h-64">
@@ -206,21 +227,39 @@ function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg border border-blue-100 shadow-sm">
-              <CompanyTable
-                data={companySummary}
-                financials={financialsMap}
-                hiddenCompanyIds={hiddenCompanyIds}
-                onMarkContacted={handleMarkContacted}
-                onSnooze={handleSnooze}
-                onAddNote={handleAddNote}
-                onDelete={handleDeleteCompany}
-                signalTypeFilter={signalTypeFilter}
-                stockMovementFilter={stockMovementFilter}
-                irCycleFilter={irCycleFilter}
-                showHidden={showHidden}
+            <>
+              {/* Active Companies - Full Table */}
+              <section className="bg-white rounded-lg border border-blue-100 shadow-sm mb-6">
+                <CompanyTable
+                  data={companySummary}
+                  financials={financialsMap}
+                  hiddenCompanyIds={hiddenCompanyIds}
+                  onMarkContacted={handleMarkContacted}
+                  onSnooze={handleSnooze}
+                  onAddNote={handleAddNote}
+                  onDelete={handleDeleteCompany}
+                  signalTypeFilter={signalTypeFilter}
+                  stockMovementFilter={stockMovementFilter}
+                  irCycleFilter={irCycleFilter}
+                />
+              </section>
+
+              {/* Contacted Section - Collapsible */}
+              <OutreachSection
+                title="Contacted"
+                items={contactedCompanies}
+                onUndo={handleUndoContacted}
+                colorScheme="green"
               />
-            </div>
+
+              {/* Snoozed Section - Collapsible */}
+              <OutreachSection
+                title="Snoozed"
+                items={snoozedCompanies}
+                onUndo={handleUndoSnoozed}
+                colorScheme="amber"
+              />
+            </>
           )}
         </main>
       </div>
