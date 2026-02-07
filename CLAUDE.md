@@ -6,6 +6,19 @@ AI-powered dashboard for identifying IR team pain points and prioritizing sales 
 
 ## Recent Updates
 
+### Profile / Territory System (2026-02-07)
+
+**Multi-salesperson support** without auth — each salesperson maintains their own territory (set of companies) with independent outreach tracking, while sharing the underlying news/signal data.
+
+- `profiles` table + `profile_companies` junction table in schema
+- `profile_id` column on `outreach_actions` for profile-scoped outreach
+- Dropdown profile selector in header, stored in localStorage
+- Auto-creates "Default" profile on first load if none exist
+- Same company can exist in multiple profiles (shared via junction table)
+- Pipeline/financials scoped to selected profile's companies
+- All `profile_id` params are optional — backward compatible
+- **Details**: See "Profile / Territory System" section below
+
 ### IR Relevance Filtering & Talking Point Consolidation (2026-02-07)
 
 **Classification Prompt Refinement**:
@@ -84,7 +97,7 @@ sales-intelligence-tracker/
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx
-│   │   ├── components/   # CompanyTable, Filters, Sidebar, etc.
+│   │   ├── components/   # CompanyTable, Filters, Sidebar, ProfileSelector, etc.
 │   │   ├── api/client.ts
 │   │   └── types/index.ts
 │   ├── package.json
@@ -113,7 +126,7 @@ sales-intelligence-tracker/
 
 1. **Cost-conscious**: ~$5/month total (Render free/starter + Supabase free)
 2. **1000 company scale**: Designed for hundreds of companies, not millions
-3. **Single user**: No auth, no multi-tenancy
+3. **Multi-user via profiles**: No auth, profile selector in header, localStorage persistence
 4. **Daily batch**: ETL runs on-demand, not real-time
 5. **Claude Haiku only**: Don't upgrade to Sonnet unless necessary
 
@@ -121,17 +134,20 @@ sales-intelligence-tracker/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/companies` | GET | List companies |
-| `/api/companies` | POST | Add company |
-| `/api/companies/summary` | GET | Pain summary for dashboard |
-| `/api/init` | GET | Combined initial load (summary + financials + outreach) |
-| `/api/financials` | GET | Stock data |
+| `/api/profiles` | GET | List all profiles |
+| `/api/profiles` | POST | Create profile |
+| `/api/profiles/{id}` | DELETE | Delete profile (cascades junction + outreach) |
+| `/api/companies` | GET | List companies (`profile_id` optional) |
+| `/api/companies` | POST | Add company (`profile_id` in body for junction link) |
+| `/api/companies/summary` | GET | Pain summary (`profile_id` optional) |
+| `/api/init` | GET | Combined initial load (`profile_id` optional) |
+| `/api/financials` | GET | Stock data (`profile_id` optional) |
 | `/api/signals` | GET | Signals with filters |
-| `/api/outreach` | POST | Log outreach action |
-| `/api/outreach/hidden` | GET | Hidden company IDs |
-| `/api/pipeline/run` | POST | Run ETL pipeline |
-| `/api/pipeline/financials` | POST | Refresh stock data |
-| `/api/pipeline/update-all` | POST | Run pipeline + refresh financials |
+| `/api/outreach` | POST | Log outreach action (`profile_id` in body) |
+| `/api/outreach/hidden` | GET | Hidden company IDs (`profile_id` optional) |
+| `/api/pipeline/run` | POST | Run ETL pipeline (`profile_id` optional) |
+| `/api/pipeline/financials` | POST | Refresh stock data (`profile_id` optional) |
+| `/api/pipeline/update-all` | POST | Run pipeline + refresh financials (`profile_id` optional) |
 
 ## Development
 
@@ -270,6 +286,65 @@ One talking point per company, generated after all article classification is com
 
 The model picks the most compelling pain point and writes a single outreach opener.
 
+## Profile / Territory System
+
+Lightweight multi-salesperson support. Each profile is a territory — a set of companies with independent outreach tracking. No authentication; profile selection stored in localStorage.
+
+### Data Model
+
+- **Global (shared)**: `companies`, `articles`, `signals`, `company_financials` — all profiles see the same news/signals for a given company
+- **Profile-scoped**: `outreach_actions.profile_id` — each profile tracks contacted/snoozed independently
+- **Junction**: `profile_companies` — maps profiles to their companies (many-to-many)
+
+### Key Behaviors
+
+- **Shared companies**: When Profile B adds a ticker that already exists, the existing company record is reused and a new junction link is created (no duplicate company)
+- **Orphan cleanup**: When the last profile unlinks a company, the company + cascaded data (articles, signals, financials) is deleted
+- **Pipeline scoping**: `run_pipeline(profile_id=...)` only processes that profile's companies; `process_company()` is profile-agnostic (URL dedup prevents duplicate articles/signals)
+- **Backward compat**: All `profile_id` params are optional — the app works without profiles as a fallback
+
+### Frontend Flow
+
+1. On load, fetch profiles (`GET /api/profiles`)
+2. If no profiles exist, auto-create "Default"
+3. If saved `profileId` in localStorage is stale (deleted), auto-select first profile
+4. All queries include `profile_id` — init data, mutations, pipeline runs
+5. `ProfileSelector` component in header: dropdown + inline create + delete
+
+### Key Functions
+
+**db.py — Profile CRUD**:
+- `create_profile(name)` — insert, raise ValueError on duplicate
+- `get_profiles()` — all profiles, ordered by name
+- `delete_profile(profile_id)` — CASCADE removes junction + outreach
+
+**db.py — Junction helpers**:
+- `link_company_to_profile(profile_id, company_id)` — insert, ignore duplicates
+- `unlink_company_from_profile(profile_id, company_id)` — delete junction row
+- `get_profile_company_ids(profile_id)` — list of company_id strings
+- `is_company_orphaned(company_id)` — check if any junction links remain
+
+**db.py — Modified functions** (all accept optional `profile_id`):
+- `add_company()` — reuses existing company if ticker matches + profile_id given
+- `get_companies()` — filters by junction when profile_id provided
+- `delete_company()` — unlinks from profile; only deletes company if orphaned
+- `get_company_pain_summary()` — filters signals to profile's companies
+- `get_company_financials()` — filters by profile's company IDs
+- `get_financials_needing_refresh()` — scopes to profile's companies
+- `add_outreach_action()` — includes profile_id in insert
+- `get_companies_to_hide()`, `delete_outreach_action()`, `get_outreach_details()` — filter by profile_id
+
+### Migration SQL
+
+For existing deployments, run after creating tables:
+```sql
+INSERT INTO profiles (name) VALUES ('Default') ON CONFLICT (name) DO NOTHING;
+INSERT INTO profile_companies (profile_id, company_id)
+SELECT p.id, c.id FROM profiles p, companies c WHERE p.name = 'Default';
+UPDATE outreach_actions SET profile_id = (SELECT id FROM profiles WHERE name = 'Default')
+WHERE profile_id IS NULL;
+```
+
 ## Performance Goals
 
 Current pain points addressed:
@@ -318,18 +393,20 @@ Recent improvements:
 - [x] Action button layout fixes
 
 Areas for improvement:
-- [ ] Mobile responsiveness
+- [ ] Mobile responsiveness (ProfileSelector overflows on narrow screens)
 - [ ] Keyboard navigation
 - [ ] Dark mode support
 
 ## Database Schema
 
 See `schema.sql` for full schema. Key tables:
-- `companies` - Watchlist
-- `articles` - Fetched news
-- `signals` - AI-classified signals with pain scores
-- `company_financials` - Stock data from yfinance
-- `outreach_actions` - Contact/snooze tracking
+- `companies` - Watchlist (global, shared across profiles)
+- `articles` - Fetched news (global)
+- `signals` - AI-classified signals with pain scores (global)
+- `company_financials` - Stock data from yfinance (global)
+- `profiles` - Salesperson territories
+- `profile_companies` - Junction: which companies belong to which profiles
+- `outreach_actions` - Contact/snooze tracking (profile-scoped via `profile_id`)
 
 ## Testing
 
