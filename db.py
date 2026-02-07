@@ -22,17 +22,94 @@ def get_client() -> Client:
     return _client
 
 
+# --- Profiles ---
+
+def create_profile(name: str) -> dict:
+    """Create a new profile. Raises ValueError on duplicate name."""
+    client = get_client()
+    try:
+        result = client.table(config.TABLE_PROFILES).insert({"name": name}).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            raise ValueError(f"Profile '{name}' already exists")
+        raise
+
+
+def get_profiles() -> list:
+    """Get all profiles, ordered by name."""
+    client = get_client()
+    result = client.table(config.TABLE_PROFILES).select("*").order("name").execute()
+    return result.data
+
+
+def delete_profile(profile_id: str) -> dict:
+    """Delete a profile. CASCADE removes junction links + profile-scoped outreach."""
+    client = get_client()
+    result = client.table(config.TABLE_PROFILES).delete().eq("id", profile_id).execute()
+    return result.data[0] if result.data else None
+
+
+# --- Profile-Company Junction ---
+
+def link_company_to_profile(profile_id: str, company_id: str) -> dict:
+    """Link a company to a profile. Ignores duplicates."""
+    client = get_client()
+    try:
+        result = client.table(config.TABLE_PROFILE_COMPANIES).insert({
+            "profile_id": profile_id,
+            "company_id": company_id,
+        }).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            return None
+        raise
+
+
+def unlink_company_from_profile(profile_id: str, company_id: str) -> bool:
+    """Remove a company from a profile. Returns True if removed."""
+    client = get_client()
+    result = client.table(config.TABLE_PROFILE_COMPANIES).delete().eq(
+        "profile_id", profile_id
+    ).eq("company_id", company_id).execute()
+    return len(result.data) > 0
+
+
+def get_profile_company_ids(profile_id: str) -> list:
+    """Get list of company_id strings for a profile."""
+    client = get_client()
+    result = client.table(config.TABLE_PROFILE_COMPANIES).select(
+        "company_id"
+    ).eq("profile_id", profile_id).execute()
+    return [row["company_id"] for row in result.data]
+
+
+def is_company_orphaned(company_id: str) -> bool:
+    """Check if a company has no profile links remaining."""
+    client = get_client()
+    result = client.table(config.TABLE_PROFILE_COMPANIES).select(
+        "profile_id"
+    ).eq("company_id", company_id).limit(1).execute()
+    return len(result.data) == 0
+
+
 # --- Companies ---
 
-def add_company(name: str, ticker: str = None, aliases: list = None) -> dict:
-    """Add a company to the watchlist. Raises ValueError if ticker already exists."""
+def add_company(name: str, ticker: str = None, aliases: list = None, profile_id: str = None) -> dict:
+    """Add a company to the watchlist. If ticker exists and profile_id given, reuse existing company."""
     client = get_client()
 
-    # Check for duplicate ticker
+    # Check for existing ticker
     if ticker:
         existing = get_company_by_ticker(ticker)
         if existing:
-            raise ValueError(f"Company with ticker '{ticker}' already exists")
+            if profile_id:
+                # Reuse existing company — just create junction link
+                link_company_to_profile(profile_id, existing["id"])
+                return existing
+            else:
+                raise ValueError(f"Company with ticker '{ticker}' already exists")
 
     data = {
         "name": name,
@@ -41,12 +118,28 @@ def add_company(name: str, ticker: str = None, aliases: list = None) -> dict:
         "active": True,
     }
     result = client.table(config.TABLE_COMPANIES).insert(data).execute()
-    return result.data[0] if result.data else None
+    company = result.data[0] if result.data else None
+
+    if company and profile_id:
+        link_company_to_profile(profile_id, company["id"])
+
+    return company
 
 
-def get_companies(active_only: bool = True) -> list:
-    """Get all companies from watchlist."""
+def get_companies(active_only: bool = True, profile_id: str = None) -> list:
+    """Get companies from watchlist, optionally filtered to a profile's territory."""
     client = get_client()
+
+    if profile_id:
+        company_ids = get_profile_company_ids(profile_id)
+        if not company_ids:
+            return []
+        query = client.table(config.TABLE_COMPANIES).select("*").in_("id", company_ids)
+        if active_only:
+            query = query.eq("active", True)
+        result = query.execute()
+        return result.data
+
     query = client.table(config.TABLE_COMPANIES).select("*")
     if active_only:
         query = query.eq("active", True)
@@ -61,17 +154,29 @@ def get_company_by_ticker(ticker: str) -> dict:
     return result.data[0] if result.data else None
 
 
-def delete_company(company_id: str) -> dict:
-    """Delete a company and all related data (signals, articles, financials, outreach)."""
+def delete_company(company_id: str, profile_id: str = None) -> dict:
+    """Delete a company. If profile_id, unlink from profile and only delete if orphaned."""
     client = get_client()
 
-    # Delete related data first (foreign key constraints)
+    if profile_id:
+        # Unlink from this profile
+        unlink_company_from_profile(profile_id, company_id)
+        # Delete profile-scoped outreach for this company
+        client.table(config.TABLE_OUTREACH).delete().eq(
+            "company_id", company_id
+        ).eq("profile_id", profile_id).execute()
+        # Only delete the company record if no other profiles reference it
+        if not is_company_orphaned(company_id):
+            return {"id": company_id}
+        # Fall through to full delete if orphaned
+
+    # Full delete: remove related data then company
     client.table(config.TABLE_SIGNALS).delete().eq("company_id", company_id).execute()
     client.table(config.TABLE_ARTICLES).delete().eq("company_id", company_id).execute()
     client.table(config.TABLE_FINANCIALS).delete().eq("company_id", company_id).execute()
     client.table(config.TABLE_OUTREACH).delete().eq("company_id", company_id).execute()
+    client.table(config.TABLE_PROFILE_COMPANIES).delete().eq("company_id", company_id).execute()
 
-    # Delete the company
     result = client.table(config.TABLE_COMPANIES).delete().eq("id", company_id).execute()
     return result.data[0] if result.data else None
 
@@ -210,7 +315,7 @@ def get_company_signal_summary() -> list:
     return list(company_stats.values())
 
 
-def get_company_pain_summary(days: int = 7) -> list:
+def get_company_pain_summary(days: int = 7, profile_id: str = None) -> list:
     """Get company-level pain summary for outreach prioritization.
 
     Returns list of dicts with:
@@ -223,6 +328,13 @@ def get_company_pain_summary(days: int = 7) -> list:
     Sorted by max_pain_score descending.
     """
     client = get_client()
+
+    # If profile_id, get the profile's company IDs for filtering
+    profile_company_ids = None
+    if profile_id:
+        profile_company_ids = set(get_profile_company_ids(profile_id))
+        if not profile_company_ids:
+            return []
 
     # Calculate cutoff date
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -238,6 +350,11 @@ def get_company_pain_summary(days: int = 7) -> list:
 
     for signal in result.data:
         company_id = signal["company_id"]
+
+        # Filter to profile's companies
+        if profile_company_ids is not None and company_id not in profile_company_ids:
+            continue
+
         company = signal.get("companies", {})
 
         if company_id not in company_data:
@@ -303,22 +420,36 @@ def upsert_company_financials(company_id: str, data: dict) -> dict:
     return result.data[0] if result.data else None
 
 
-def get_company_financials(company_id: str = None) -> list:
-    """Get financials for one or all companies."""
+def get_company_financials(company_id: str = None, profile_id: str = None) -> list:
+    """Get financials for one or all companies, optionally filtered by profile."""
     client = get_client()
     query = client.table(config.TABLE_FINANCIALS).select("*")
     if company_id:
         query = query.eq("company_id", company_id)
+    elif profile_id:
+        company_ids = get_profile_company_ids(profile_id)
+        if not company_ids:
+            return []
+        query = query.in_("company_id", company_ids)
     result = query.execute()
     return result.data
 
 
-def get_financials_needing_refresh(hours: int = 24) -> list:
+def get_financials_needing_refresh(hours: int = 24, profile_id: str = None) -> list:
     """Get companies with tickers that have stale or missing financials."""
     client = get_client()
 
-    # Get all companies with tickers
-    companies = client.table(config.TABLE_COMPANIES).select("id, ticker").eq("active", True).execute()
+    # Get all companies with tickers (scoped to profile if given)
+    if profile_id:
+        company_ids = get_profile_company_ids(profile_id)
+        if not company_ids:
+            return []
+        companies = client.table(config.TABLE_COMPANIES).select(
+            "id, ticker"
+        ).eq("active", True).in_("id", company_ids).execute()
+    else:
+        companies = client.table(config.TABLE_COMPANIES).select("id, ticker").eq("active", True).execute()
+
     companies_with_tickers = [c for c in companies.data if c.get("ticker")]
 
     if not companies_with_tickers:
@@ -353,14 +484,16 @@ def get_financials_needing_refresh(hours: int = 24) -> list:
 
 # --- Outreach Actions ---
 
-def add_outreach_action(company_id: str, action_type: str, note: str = None) -> dict:
-    """Log an outreach action for a company."""
+def add_outreach_action(company_id: str, action_type: str, note: str = None, profile_id: str = None) -> dict:
+    """Log an outreach action for a company, optionally scoped to a profile."""
     client = get_client()
     data = {
         "company_id": company_id,
         "action_type": action_type,
         "note": note,
     }
+    if profile_id:
+        data["profile_id"] = profile_id
     result = client.table(config.TABLE_OUTREACH).insert(data).execute()
     return result.data[0] if result.data else None
 
@@ -383,7 +516,7 @@ def get_last_contact(company_id: str) -> dict:
     return result.data[0] if result.data else None
 
 
-def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7) -> dict:
+def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7, profile_id: str = None) -> dict:
     """Get company IDs that should be hidden (recently contacted or snoozed).
 
     Returns:
@@ -392,11 +525,14 @@ def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7) -> dic
     client = get_client()
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(contacted_days, snoozed_days))
 
-    result = client.table(config.TABLE_OUTREACH).select(
+    query = client.table(config.TABLE_OUTREACH).select(
         "company_id, action_type, created_at"
     ).in_("action_type", ["contacted", "snoozed"]).gte(
         "created_at", cutoff.isoformat()
-    ).execute()
+    )
+    if profile_id:
+        query = query.eq("profile_id", profile_id)
+    result = query.execute()
 
     contacted_ids = set()
     snoozed_ids = set()
@@ -414,7 +550,7 @@ def get_companies_to_hide(contacted_days: int = 7, snoozed_days: int = 7) -> dic
     return {"contacted": contacted_ids, "snoozed": snoozed_ids}
 
 
-def delete_outreach_action(company_id: str, action_type: str) -> bool:
+def delete_outreach_action(company_id: str, action_type: str, profile_id: str = None) -> bool:
     """Delete all outreach actions of given type for a company.
 
     Returns:
@@ -422,15 +558,17 @@ def delete_outreach_action(company_id: str, action_type: str) -> bool:
     """
     client = get_client()
 
-    # Delete all actions of this type for the company
-    result = client.table(config.TABLE_OUTREACH).delete().eq(
+    query = client.table(config.TABLE_OUTREACH).delete().eq(
         "company_id", company_id
-    ).eq("action_type", action_type).execute()
+    ).eq("action_type", action_type)
+    if profile_id:
+        query = query.eq("profile_id", profile_id)
+    result = query.execute()
 
     return len(result.data) > 0
 
 
-def get_outreach_details(contacted_days: int = 7, snoozed_days: int = 7) -> dict:
+def get_outreach_details(contacted_days: int = 7, snoozed_days: int = 7, profile_id: str = None) -> dict:
     """Get detailed outreach info for contacted/snoozed companies.
 
     Returns:
@@ -441,11 +579,14 @@ def get_outreach_details(contacted_days: int = 7, snoozed_days: int = 7) -> dict
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(contacted_days, snoozed_days))
 
     # Get outreach actions with company info
-    result = client.table(config.TABLE_OUTREACH).select(
+    query = client.table(config.TABLE_OUTREACH).select(
         "company_id, action_type, created_at, companies(name, ticker)"
     ).in_("action_type", ["contacted", "snoozed"]).gte(
         "created_at", cutoff.isoformat()
-    ).order("created_at", desc=True).execute()
+    ).order("created_at", desc=True)
+    if profile_id:
+        query = query.eq("profile_id", profile_id)
+    result = query.execute()
 
     contacted = []
     snoozed = []

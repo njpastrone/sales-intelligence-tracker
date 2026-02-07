@@ -1,5 +1,11 @@
 // TypeScript interfaces for the Sales Intelligence Tracker
 
+export interface Profile {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface Company {
   id: string;
   name: string;

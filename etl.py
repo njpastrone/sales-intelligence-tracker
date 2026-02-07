@@ -415,15 +415,18 @@ def process_company(company: dict) -> dict:
     return stats
 
 
-def run_pipeline() -> dict:
-    """Run full ETL pipeline for all active companies with parallel processing.
+def run_pipeline(profile_id: str = None) -> dict:
+    """Run full ETL pipeline for active companies with parallel processing.
+
+    Args:
+        profile_id: If provided, only process this profile's companies
 
     Returns:
         dict with total stats
     """
     import db  # Import here to avoid circular dependency
 
-    companies = db.get_companies(active_only=True)
+    companies = db.get_companies(active_only=True, profile_id=profile_id)
 
     totals = {
         "companies": len(companies),
@@ -567,11 +570,12 @@ def fetch_company_financials(ticker: str) -> dict:
     return result
 
 
-def refresh_financials(force: bool = False) -> dict:
+def refresh_financials(force: bool = False, profile_id: str = None) -> dict:
     """Refresh financial data for companies with stale or missing data.
 
     Args:
         force: If True, refresh all companies regardless of staleness
+        profile_id: If provided, only refresh this profile's companies
 
     Returns:
         dict with stats: companies_refreshed, companies_failed
@@ -582,7 +586,7 @@ def refresh_financials(force: bool = False) -> dict:
 
     # Get companies needing refresh (use hours=0 to force refresh all)
     hours = 0 if force else config.FINANCIALS_REFRESH_HOURS
-    companies = db.get_financials_needing_refresh(hours=hours)
+    companies = db.get_financials_needing_refresh(hours=hours, profile_id=profile_id)
 
     for company in companies:
         ticker = company.get("ticker")

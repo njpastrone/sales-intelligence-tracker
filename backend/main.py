@@ -52,20 +52,52 @@ class CompanyCreate(BaseModel):
     name: str
     ticker: Optional[str] = None
     aliases: Optional[list[str]] = None
+    profile_id: Optional[str] = None
 
 
 class OutreachCreate(BaseModel):
     company_id: str
     action_type: str
     note: Optional[str] = None
+    profile_id: Optional[str] = None
+
+
+class ProfileCreate(BaseModel):
+    name: str
+
+
+# --- Profile Endpoints ---
+
+@app.get("/api/profiles")
+def get_profiles():
+    """Get all profiles."""
+    return db.get_profiles()
+
+
+@app.post("/api/profiles")
+def create_profile(profile: ProfileCreate):
+    """Create a new profile."""
+    try:
+        return db.create_profile(name=profile.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/profiles/{profile_id}")
+def delete_profile(profile_id: str):
+    """Delete a profile and its junction links."""
+    result = db.delete_profile(profile_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return {"deleted": True, "profile_id": profile_id}
 
 
 # --- Company Endpoints ---
 
 @app.get("/api/companies")
-def get_companies(active_only: bool = True):
+def get_companies(active_only: bool = True, profile_id: Optional[str] = None):
     """Get all companies from watchlist."""
-    return db.get_companies(active_only=active_only)
+    return db.get_companies(active_only=active_only, profile_id=profile_id)
 
 
 @app.post("/api/companies")
@@ -76,6 +108,7 @@ def add_company(company: CompanyCreate):
             name=company.name,
             ticker=company.ticker,
             aliases=company.aliases,
+            profile_id=company.profile_id,
         )
 
         # Automatically fetch financials if ticker is provided
@@ -93,19 +126,20 @@ def add_company(company: CompanyCreate):
 
 
 @app.get("/api/companies/summary")
-def get_company_summary(days: int = 7):
+def get_company_summary(days: int = 7, profile_id: Optional[str] = None):
     """Get company pain summary for outreach prioritization."""
-    return db.get_company_pain_summary(days=days)
+    return db.get_company_pain_summary(days=days, profile_id=profile_id)
 
 
 @app.get("/api/init")
-def get_init_data(days: int = 7, contacted_days: int = 7, snoozed_days: int = 7):
+def get_init_data(days: int = 7, contacted_days: int = 7, snoozed_days: int = 7, profile_id: Optional[str] = None):
     """Combined initial load endpoint - returns all data needed for first render."""
-    summary = db.get_company_pain_summary(days=days)
-    financials = db.get_company_financials()
+    summary = db.get_company_pain_summary(days=days, profile_id=profile_id)
+    financials = db.get_company_financials(profile_id=profile_id)
     outreach = db.get_outreach_details(
         contacted_days=contacted_days,
         snoozed_days=snoozed_days,
+        profile_id=profile_id,
     )
     return {
         "summary": summary,
@@ -118,9 +152,9 @@ def get_init_data(days: int = 7, contacted_days: int = 7, snoozed_days: int = 7)
 
 
 @app.delete("/api/companies/{company_id}")
-def delete_company(company_id: str):
+def delete_company(company_id: str, profile_id: Optional[str] = None):
     """Delete a company and all related data."""
-    result = db.delete_company(company_id)
+    result = db.delete_company(company_id, profile_id=profile_id)
     if not result:
         raise HTTPException(status_code=404, detail="Company not found")
     return {"deleted": True, "company_id": company_id}
@@ -129,9 +163,9 @@ def delete_company(company_id: str):
 # --- Financials Endpoints ---
 
 @app.get("/api/financials")
-def get_financials(company_id: Optional[str] = None):
+def get_financials(company_id: Optional[str] = None, profile_id: Optional[str] = None):
     """Get financial data for companies."""
-    return db.get_company_financials(company_id=company_id)
+    return db.get_company_financials(company_id=company_id, profile_id=profile_id)
 
 
 # --- Signals Endpoints ---
@@ -172,16 +206,18 @@ def add_outreach(outreach: OutreachCreate):
         company_id=outreach.company_id,
         action_type=outreach.action_type,
         note=outreach.note,
+        profile_id=outreach.profile_id,
     )
 
 
 # NOTE: /hidden must come BEFORE /{company_id} to avoid route conflict
 @app.get("/api/outreach/hidden")
-def get_hidden_companies(contacted_days: int = 7, snoozed_days: int = 7):
+def get_hidden_companies(contacted_days: int = 7, snoozed_days: int = 7, profile_id: Optional[str] = None):
     """Get detailed info for hidden companies (recently contacted or snoozed)."""
     result = db.get_outreach_details(
         contacted_days=contacted_days,
         snoozed_days=snoozed_days,
+        profile_id=profile_id,
     )
     return {
         "contacted": result["contacted"],
@@ -190,14 +226,14 @@ def get_hidden_companies(contacted_days: int = 7, snoozed_days: int = 7):
 
 
 @app.delete("/api/outreach/{company_id}/{action_type}")
-def delete_outreach_action(company_id: str, action_type: str):
+def delete_outreach_action(company_id: str, action_type: str, profile_id: Optional[str] = None):
     """Delete the most recent outreach action of given type for a company."""
     if action_type not in config.OUTREACH_ACTION_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid action_type. Must be one of: {list(config.OUTREACH_ACTION_TYPES.keys())}",
         )
-    deleted = db.delete_outreach_action(company_id, action_type)
+    deleted = db.delete_outreach_action(company_id, action_type, profile_id=profile_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="No action found to delete")
     return {"deleted": True, "company_id": company_id, "action_type": action_type}
@@ -212,24 +248,24 @@ def get_outreach_actions(company_id: str, limit: int = 10):
 # --- Pipeline Endpoints ---
 
 @app.post("/api/pipeline/run")
-def run_pipeline():
-    """Run the full ETL pipeline for all active companies."""
-    result = etl.run_pipeline()
+def run_pipeline(profile_id: Optional[str] = None):
+    """Run the full ETL pipeline for active companies."""
+    result = etl.run_pipeline(profile_id=profile_id)
     return result
 
 
 @app.post("/api/pipeline/financials")
-def refresh_financials():
+def refresh_financials(profile_id: Optional[str] = None):
     """Refresh financial data for companies with stale data."""
-    result = etl.refresh_financials()
+    result = etl.refresh_financials(profile_id=profile_id)
     return result
 
 
 @app.post("/api/pipeline/update-all")
-def update_all():
+def update_all(profile_id: Optional[str] = None):
     """Run full pipeline and refresh financials in one call."""
-    pipeline_result = etl.run_pipeline()
-    financials_result = etl.refresh_financials(force=True)
+    pipeline_result = etl.run_pipeline(profile_id=profile_id)
+    financials_result = etl.refresh_financials(force=True, profile_id=profile_id)
     return {
         "pipeline": pipeline_result,
         "financials": financials_result,

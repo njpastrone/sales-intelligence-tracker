@@ -3,6 +3,7 @@
 import axios from 'axios';
 import type {
   Company,
+  Profile,
   CompanyPainSummary,
   CompanyFinancials,
   Signal,
@@ -23,11 +24,28 @@ const api = axios.create({
   },
 });
 
+// --- Profiles ---
+
+export async function getProfiles(): Promise<Profile[]> {
+  const response = await api.get('/api/profiles');
+  return response.data;
+}
+
+export async function createProfile(name: string): Promise<Profile> {
+  const response = await api.post('/api/profiles', { name });
+  return response.data;
+}
+
+export async function deleteProfile(profileId: string): Promise<{ deleted: boolean }> {
+  const response = await api.delete(`/api/profiles/${profileId}`);
+  return response.data;
+}
+
 // --- Companies ---
 
-export async function getCompanies(activeOnly = true): Promise<Company[]> {
+export async function getCompanies(activeOnly = true, profileId?: string): Promise<Company[]> {
   const response = await api.get('/api/companies', {
-    params: { active_only: activeOnly },
+    params: { active_only: activeOnly, ...(profileId && { profile_id: profileId }) },
   });
   return response.data;
 }
@@ -36,28 +54,37 @@ export async function addCompany(data: {
   name: string;
   ticker?: string;
   aliases?: string[];
+  profile_id?: string;
 }): Promise<Company> {
   const response = await api.post('/api/companies', data);
   return response.data;
 }
 
-export async function getCompanySummary(days = 7): Promise<CompanyPainSummary[]> {
+export async function getCompanySummary(days = 7, profileId?: string): Promise<CompanyPainSummary[]> {
   const response = await api.get('/api/companies/summary', {
-    params: { days },
+    params: { days, ...(profileId && { profile_id: profileId }) },
   });
   return response.data;
 }
 
-export async function deleteCompany(companyId: string): Promise<{ deleted: boolean; company_id: string }> {
-  const response = await api.delete(`/api/companies/${companyId}`);
+export async function deleteCompany(
+  companyId: string,
+  profileId?: string
+): Promise<{ deleted: boolean; company_id: string }> {
+  const response = await api.delete(`/api/companies/${companyId}`, {
+    params: profileId ? { profile_id: profileId } : {},
+  });
   return response.data;
 }
 
 // --- Financials ---
 
-export async function getFinancials(companyId?: string): Promise<CompanyFinancials[]> {
+export async function getFinancials(companyId?: string, profileId?: string): Promise<CompanyFinancials[]> {
   const response = await api.get('/api/financials', {
-    params: companyId ? { company_id: companyId } : {},
+    params: {
+      ...(companyId && { company_id: companyId }),
+      ...(profileId && { profile_id: profileId }),
+    },
   });
   return response.data;
 }
@@ -87,6 +114,7 @@ export async function addOutreachAction(data: {
   company_id: string;
   action_type: OutreachActionType;
   note?: string;
+  profile_id?: string;
 }): Promise<OutreachAction> {
   const response = await api.post('/api/outreach', data);
   return response.data;
@@ -116,39 +144,53 @@ export interface HiddenCompaniesResponse {
 
 export async function getHiddenCompanies(
   contactedDays = 7,
-  snoozedDays = 7
+  snoozedDays = 7,
+  profileId?: string
 ): Promise<HiddenCompaniesResponse> {
   const response = await api.get('/api/outreach/hidden', {
-    params: { contacted_days: contactedDays, snoozed_days: snoozedDays },
+    params: {
+      contacted_days: contactedDays,
+      snoozed_days: snoozedDays,
+      ...(profileId && { profile_id: profileId }),
+    },
   });
   return response.data;
 }
 
 export async function deleteOutreachAction(
   companyId: string,
-  actionType: string
+  actionType: string,
+  profileId?: string
 ): Promise<{ deleted: boolean; company_id: string; action_type: string }> {
-  const response = await api.delete(`/api/outreach/${companyId}/${actionType}`);
+  const response = await api.delete(`/api/outreach/${companyId}/${actionType}`, {
+    params: profileId ? { profile_id: profileId } : {},
+  });
   return response.data;
 }
 
 // --- Pipeline ---
 
-export async function runPipeline(): Promise<PipelineStats> {
-  const response = await api.post('/api/pipeline/run');
+export async function runPipeline(profileId?: string): Promise<PipelineStats> {
+  const response = await api.post('/api/pipeline/run', null, {
+    params: profileId ? { profile_id: profileId } : {},
+  });
   return response.data;
 }
 
-export async function refreshFinancials(): Promise<FinancialsRefreshStats> {
-  const response = await api.post('/api/pipeline/financials');
+export async function refreshFinancials(profileId?: string): Promise<FinancialsRefreshStats> {
+  const response = await api.post('/api/pipeline/financials', null, {
+    params: profileId ? { profile_id: profileId } : {},
+  });
   return response.data;
 }
 
-export async function updateAll(): Promise<{
+export async function updateAll(profileId?: string): Promise<{
   pipeline: PipelineStats;
   financials: FinancialsRefreshStats;
 }> {
-  const response = await api.post('/api/pipeline/update-all');
+  const response = await api.post('/api/pipeline/update-all', null, {
+    params: profileId ? { profile_id: profileId } : {},
+  });
   return response.data;
 }
 
@@ -172,9 +214,9 @@ export interface InitData {
   outreach: HiddenCompaniesResponse;
 }
 
-export async function getInitData(days = 7): Promise<InitData> {
+export async function getInitData(days = 7, profileId?: string): Promise<InitData> {
   const response = await api.get('/api/init', {
-    params: { days },
+    params: { days, ...(profileId && { profile_id: profileId }) },
   });
   return response.data;
 }

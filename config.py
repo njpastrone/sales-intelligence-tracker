@@ -274,6 +274,8 @@ TABLE_COMPANIES = "companies"
 TABLE_ARTICLES = "articles"
 TABLE_SIGNALS = "signals"
 TABLE_FINANCIALS = "company_financials"
+TABLE_PROFILES = "profiles"
+TABLE_PROFILE_COMPANIES = "profile_companies"
 
 # Market cap tiers (in USD)
 MARKET_CAP_TIERS = {

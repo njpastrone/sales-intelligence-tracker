@@ -2,9 +2,30 @@
 
 AI-powered dashboard for identifying IR team pain points and prioritizing sales outreach. Built collaboratively by a human and Claude AI.
 
-**Last updated: 2026-02-03**
+**Last updated: 2026-02-07**
 
 ## Recent Updates
+
+### IR Relevance Filtering & Talking Point Consolidation (2026-02-07)
+
+**Classification Prompt Refinement**:
+- Restructured `SIGNAL_CLASSIFICATION_PROMPT` and `BATCH_CLASSIFICATION_PROMPT` with XML tags (`<role>`, `<ir_relevance_criteria>`, `<first_check>`, `<examples>`, `<scoring_guide>`)
+- Added explicit IR relevance gate defining what creates IR team work vs. what doesn't
+- Added few-shot examples: analyst downgrade (high pain), EEOC probe (neutral), CFO departure (moderate)
+- Added chain-of-thought instruction: "Would the IR team need to brief investors about this?"
+
+**Code-Level Keyword Override**:
+- `config.NON_IR_KEYWORDS` — list of keywords (discrimination, EEOC, DEI, harassment, etc.) that force headlines to neutral
+- `etl._is_non_ir_headline()` — deterministic filter applied after model classification in both single and batch paths
+- Needed because Claude Haiku ignores prompt-level exclusions when signal words like "federal probe" or "EEOC" are strong
+- **Details**: See "IR Relevance Filtering" section below
+
+**One Talking Point Per Company**:
+- Removed `talking_point` from `BATCH_CLASSIFICATION_PROMPT` output (fewer output tokens per batch)
+- `generate_talking_point()` now takes a list of signals (top 3 by pain) and produces one company-level opener
+- Talking point attached to the highest-pain signal for each company
+- `TALKING_POINTS_PROMPT` rewritten with XML structure to accept `{signals_block}` instead of single signal
+- **Details**: See "Talking Point Generation" section below
 
 ### MVP Complete (2026-02-03)
 
@@ -103,6 +124,7 @@ sales-intelligence-tracker/
 | `/api/companies` | GET | List companies |
 | `/api/companies` | POST | Add company |
 | `/api/companies/summary` | GET | Pain summary for dashboard |
+| `/api/init` | GET | Combined initial load (summary + financials + outreach) |
 | `/api/financials` | GET | Stock data |
 | `/api/signals` | GET | Signals with filters |
 | `/api/outreach` | POST | Log outreach action |
@@ -166,14 +188,16 @@ The pipeline was optimized for performance using batch processing and paralleliz
 **config.py - Batch Processing Constants**:
 - `BATCH_CLASSIFICATION_SIZE = 8` - Articles per Claude API call
 - `COMPANY_PARALLELISM = 5` - Concurrent company processing
-- `BATCH_CLASSIFICATION_PROMPT` - Combined prompt for classification + talking points generation
+- `BATCH_CLASSIFICATION_PROMPT` - Classification-only prompt (talking points generated separately)
+- `NON_IR_KEYWORDS` - Keyword list for deterministic non-IR headline filtering
 
 **etl.py - Core Pipeline Functions**:
 - `batch_classify_articles()` - Classifies up to 8 articles in one Claude API call
-  - Generates talking points inline when pain score >= 0.5
-  - Returns list with article indices for mapping
+  - Returns list with article indices for mapping (no talking points)
 - `_parse_batch_response()` - Parses batch classification JSON response
-- `process_company()` - Refactored to use batch classification with fallback to individual classification
+- `_is_non_ir_headline()` - Keyword-based override for non-IR headlines
+- `generate_talking_point()` - One call per company using top 3 signals
+- `process_company()` - Batch classify → keyword override → one talking point per company
 - `run_pipeline()` - Uses `ThreadPoolExecutor` with 5 workers for parallel company processing
 
 **db.py - Batch Database Operations**:
@@ -192,10 +216,59 @@ The pipeline was optimized for performance using batch processing and paralleliz
 
 If batch processing fails:
 1. Batch classification falls back to individual `classify_article()` calls
-2. Talking points generated separately with `generate_talking_point()`
+2. Talking point still generated once per company from available signals
 3. Batch signal insert falls back to individual `add_signal()` calls
 
 This ensures robustness while maintaining performance gains in the happy path.
+
+## IR Relevance Filtering
+
+Classification prompts include an IR relevance gate, but Claude Haiku ignores prompt-level exclusions when headlines contain strong signal words (e.g., "federal probe", "EEOC", "government investigation"). A code-level keyword override provides a deterministic fallback.
+
+### How It Works
+
+1. **Prompt-level**: `<ir_relevance_criteria>` and `<first_check>` sections in both classification prompts define what's IR-relevant vs. internal matters
+2. **Code-level**: After model classification, `_is_non_ir_headline()` checks headlines against `config.NON_IR_KEYWORDS`
+3. **Override**: If a keyword matches and `signal_type != "neutral"`, forces `signal_type = "neutral"` and `ir_pain_score = 0.0`
+
+### Adding New Keywords
+
+To exclude a new category of non-IR news, add keywords to `NON_IR_KEYWORDS` in `config.py`:
+
+```python
+NON_IR_KEYWORDS = [
+    "discrimination", "eeoc", "dei policy", "dei policies", "dei program",
+    "workplace bias", "bias against", "labor dispute", "employee lawsuit",
+    # ... add new keywords here
+]
+```
+
+### Why Both Prompt + Code?
+
+- Prompts handle the general case well (most neutral news is classified correctly)
+- Code override handles edge cases where the model's bias toward "governance_issue" or "esg_negative" overrides instructions
+- Lesson: For hard classification boundaries with smaller models, use deterministic filters
+
+## Talking Point Generation
+
+One talking point per company, generated after all article classification is complete.
+
+### Pipeline Flow
+
+1. Batch classify all articles for a company (no talking points in batch output)
+2. Collect qualifying signals (`ir_pain_score >= 0.5`)
+3. Call `generate_talking_point()` once per company with top 3 signals
+4. Attach the talking point to the highest-pain signal in the database
+
+### Prompt Design
+
+`TALKING_POINTS_PROMPT` receives a `{signals_block}` with the top 3 signals formatted as:
+```
+- [analyst_negative] (pain 0.85) Summary of the signal...
+- [stock_pressure] (pain 0.65) Summary of the signal...
+```
+
+The model picks the most compelling pain point and writes a single outreach opener.
 
 ## Performance Goals
 

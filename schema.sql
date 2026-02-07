@@ -72,3 +72,24 @@ CREATE TABLE IF NOT EXISTS outreach_actions (
 
 CREATE INDEX IF NOT EXISTS idx_outreach_company ON outreach_actions(company_id);
 CREATE INDEX IF NOT EXISTS idx_outreach_type ON outreach_actions(action_type);
+
+-- Profiles (territories for salespeople)
+CREATE TABLE IF NOT EXISTS profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Junction table: which companies belong to which profiles
+CREATE TABLE IF NOT EXISTS profile_companies (
+    profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (profile_id, company_id)
+);
+CREATE INDEX IF NOT EXISTS idx_profile_companies_profile ON profile_companies(profile_id);
+CREATE INDEX IF NOT EXISTS idx_profile_companies_company ON profile_companies(company_id);
+
+-- Add profile_id to outreach_actions for profile-scoped outreach tracking
+ALTER TABLE outreach_actions ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_outreach_profile ON outreach_actions(profile_id);

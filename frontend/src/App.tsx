@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CompanyFinancials } from './types';
 import { CompanyTable } from './components/CompanyTable';
 import { Filters, type StockMovementFilter, type IRCycleFilter } from './components/Filters';
 import { Sidebar } from './components/Sidebar';
 import { OutreachSection } from './components/OutreachSection';
+import { ProfileSelector } from './components/ProfileSelector';
 import * as api from './api/client';
 
 const queryClient = new QueryClient({
@@ -16,8 +17,68 @@ const queryClient = new QueryClient({
   },
 });
 
+const PROFILE_STORAGE_KEY = 'profileId';
+
 function Dashboard() {
   const queryClientInstance = useQueryClient();
+
+  // Profile state
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+    () => localStorage.getItem(PROFILE_STORAGE_KEY)
+  );
+
+  // Profiles query
+  const { data: profiles = [], isLoading: isLoadingProfiles } = useQuery({
+    queryKey: ['profiles'],
+    queryFn: api.getProfiles,
+    staleTime: 1000 * 60 * 30, // 30 minutes
+  });
+
+  // Auto-select logic: if no profile selected but profiles exist, select first
+  // If no profiles exist, auto-create "Default"
+  const [autoCreating, setAutoCreating] = useState(false);
+
+  useEffect(() => {
+    if (isLoadingProfiles || autoCreating) return;
+
+    if (profiles.length === 0) {
+      // No profiles — create Default
+      setAutoCreating(true);
+      api.createProfile('Default').then((profile) => {
+        queryClientInstance.invalidateQueries({ queryKey: ['profiles'] });
+        setSelectedProfileId(profile.id);
+        localStorage.setItem(PROFILE_STORAGE_KEY, profile.id);
+        setAutoCreating(false);
+      }).catch(() => setAutoCreating(false));
+      return;
+    }
+
+    // If saved profile no longer exists (deleted), select first
+    const savedExists = profiles.some((p) => p.id === selectedProfileId);
+    if (!selectedProfileId || !savedExists) {
+      const firstId = profiles[0].id;
+      setSelectedProfileId(firstId);
+      localStorage.setItem(PROFILE_STORAGE_KEY, firstId);
+    }
+  }, [profiles, selectedProfileId, isLoadingProfiles, autoCreating, queryClientInstance]);
+
+  const handleSelectProfile = (profileId: string) => {
+    setSelectedProfileId(profileId);
+    localStorage.setItem(PROFILE_STORAGE_KEY, profileId);
+  };
+
+  const handleCreateProfile = async (name: string) => {
+    const profile = await api.createProfile(name);
+    await queryClientInstance.invalidateQueries({ queryKey: ['profiles'] });
+    setSelectedProfileId(profile.id);
+    localStorage.setItem(PROFILE_STORAGE_KEY, profile.id);
+  };
+
+  const handleDeleteProfile = async (profileId: string) => {
+    await api.deleteProfile(profileId);
+    await queryClientInstance.invalidateQueries({ queryKey: ['profiles'] });
+    // Will auto-select next profile via useEffect
+  };
 
   // Filter state
   const [timeWindow, setTimeWindow] = useState(7);
@@ -25,13 +86,14 @@ function Dashboard() {
   const [stockMovementFilter, setStockMovementFilter] = useState<StockMovementFilter>('all');
   const [irCycleFilter, setIRCycleFilter] = useState<IRCycleFilter>('all');
 
-  // Fetch all initial data in a single request
+  // Fetch all initial data in a single request (profile-scoped)
   const {
     data: initData,
     isLoading: isLoadingInit,
   } = useQuery({
-    queryKey: ['initData', timeWindow],
-    queryFn: () => api.getInitData(timeWindow),
+    queryKey: ['initData', timeWindow, selectedProfileId],
+    queryFn: () => api.getInitData(timeWindow, selectedProfileId || undefined),
+    enabled: !!selectedProfileId,
   });
 
   const companySummary = initData?.summary ?? [];
@@ -71,42 +133,44 @@ function Dashboard() {
 
   // Mutations
   const addCompanyMutation = useMutation({
-    mutationFn: (data: { name: string; ticker?: string }) => api.addCompany(data),
+    mutationFn: (data: { name: string; ticker?: string }) =>
+      api.addCompany({ ...data, profile_id: selectedProfileId || undefined }),
     onSuccess: invalidateInitData,
   });
 
   const addOutreachMutation = useMutation({
-    mutationFn: api.addOutreachAction,
+    mutationFn: (data: { company_id: string; action_type: 'contacted' | 'snoozed' | 'note'; note?: string }) =>
+      api.addOutreachAction({ ...data, profile_id: selectedProfileId || undefined }),
     onSuccess: invalidateInitData,
   });
 
   const runPipelineMutation = useMutation({
-    mutationFn: api.runPipeline,
+    mutationFn: () => api.runPipeline(selectedProfileId || undefined),
     onSuccess: invalidateInitData,
   });
 
   const refreshFinancialsMutation = useMutation({
-    mutationFn: api.refreshFinancials,
+    mutationFn: () => api.refreshFinancials(selectedProfileId || undefined),
     onSuccess: async () => {
       await refetchInitData();
     },
   });
 
   const updateAllMutation = useMutation({
-    mutationFn: api.updateAll,
+    mutationFn: () => api.updateAll(selectedProfileId || undefined),
     onSuccess: async () => {
       await refetchInitData();
     },
   });
 
   const deleteCompanyMutation = useMutation({
-    mutationFn: api.deleteCompany,
+    mutationFn: (companyId: string) => api.deleteCompany(companyId, selectedProfileId || undefined),
     onSuccess: invalidateInitData,
   });
 
   const removeOutreachMutation = useMutation({
     mutationFn: ({ companyId, actionType }: { companyId: string; actionType: string }) =>
-      api.deleteOutreachAction(companyId, actionType),
+      api.deleteOutreachAction(companyId, actionType, selectedProfileId || undefined),
     onSuccess: invalidateInitData,
   });
 
@@ -165,6 +229,8 @@ function Dashboard() {
   const totalCompanies = companySummary.length;
   const totalSignals = companySummary.reduce((sum, c) => sum + c.signal_count, 0);
 
+  const isLoading = isLoadingInit || isLoadingProfiles || autoCreating;
+
   return (
     <div className="min-h-screen bg-gray-100 flex">
       {/* Sidebar */}
@@ -175,17 +241,30 @@ function Dashboard() {
         onUpdateAll={handleUpdateAll}
         totalCompanies={totalCompanies}
         totalSignals={totalSignals}
-        isLoading={isLoadingInit}
+        isLoading={isLoading}
       />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <header className="bg-blue-600 px-6 py-4">
-          <h1 className="text-2xl font-bold text-white">Sales Intelligence Tracker</h1>
-          <p className="text-sm text-blue-100 mt-1">
-            Monitor IR pain points for outreach opportunities
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Sales Intelligence Tracker</h1>
+              <p className="text-sm text-blue-100 mt-1">
+                Monitor IR pain points for outreach opportunities
+              </p>
+            </div>
+            {!isLoadingProfiles && profiles.length > 0 && (
+              <ProfileSelector
+                profiles={profiles}
+                selectedProfileId={selectedProfileId}
+                onSelectProfile={handleSelectProfile}
+                onCreateProfile={handleCreateProfile}
+                onDeleteProfile={handleDeleteProfile}
+              />
+            )}
+          </div>
         </header>
 
         {/* Filters */}
@@ -202,7 +281,7 @@ function Dashboard() {
 
         {/* Main Content - Stacked Sections */}
         <main className="flex-1 p-6 overflow-auto">
-          {isLoadingInit ? (
+          {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
                 <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-2"></div>
