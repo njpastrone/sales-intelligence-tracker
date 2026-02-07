@@ -164,6 +164,21 @@ export async function getSignalTypes(): Promise<Record<SignalType, string>> {
   return response.data;
 }
 
+// --- Init (combined initial load) ---
+
+export interface InitData {
+  summary: CompanyPainSummary[];
+  financials: CompanyFinancials[];
+  outreach: HiddenCompaniesResponse;
+}
+
+export async function getInitData(days = 7): Promise<InitData> {
+  const response = await api.get('/api/init', {
+    params: { days },
+  });
+  return response.data;
+}
+
 // --- Health ---
 
 export async function healthCheck(): Promise<{ status: string; version: string }> {

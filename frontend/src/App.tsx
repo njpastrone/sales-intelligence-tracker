@@ -25,26 +25,18 @@ function Dashboard() {
   const [stockMovementFilter, setStockMovementFilter] = useState<StockMovementFilter>('all');
   const [irCycleFilter, setIRCycleFilter] = useState<IRCycleFilter>('all');
 
-  // Fetch company pain summary
+  // Fetch all initial data in a single request
   const {
-    data: companySummary = [],
-    isLoading: isLoadingSummary,
+    data: initData,
+    isLoading: isLoadingInit,
   } = useQuery({
-    queryKey: ['companySummary', timeWindow],
-    queryFn: () => api.getCompanySummary(timeWindow),
+    queryKey: ['initData', timeWindow],
+    queryFn: () => api.getInitData(timeWindow),
   });
 
-  // Fetch financials
-  const { data: financialsData = [] } = useQuery({
-    queryKey: ['financials'],
-    queryFn: () => api.getFinancials(),
-  });
-
-  // Fetch hidden company IDs
-  const { data: hiddenData } = useQuery({
-    queryKey: ['hiddenCompanies'],
-    queryFn: () => api.getHiddenCompanies(),
-  });
+  const companySummary = initData?.summary ?? [];
+  const financialsData = initData?.financials ?? [];
+  const hiddenData = initData?.outreach;
 
   // Convert financials array to lookup map
   const financialsMap = useMemo(() => {
@@ -69,62 +61,53 @@ function Dashboard() {
   );
 
   // Mutations
+  const invalidateInitData = () => {
+    queryClientInstance.invalidateQueries({ queryKey: ['initData'] });
+  };
+
+  const refetchInitData = () => {
+    return queryClientInstance.refetchQueries({ queryKey: ['initData'] });
+  };
+
+  // Mutations
   const addCompanyMutation = useMutation({
     mutationFn: (data: { name: string; ticker?: string }) => api.addCompany(data),
-    onSuccess: () => {
-      queryClientInstance.invalidateQueries({ queryKey: ['companySummary'] });
-      queryClientInstance.invalidateQueries({ queryKey: ['financials'] });
-    },
+    onSuccess: invalidateInitData,
   });
 
   const addOutreachMutation = useMutation({
     mutationFn: api.addOutreachAction,
-    onSuccess: () => {
-      queryClientInstance.invalidateQueries({ queryKey: ['hiddenCompanies'] });
-    },
+    onSuccess: invalidateInitData,
   });
 
   const runPipelineMutation = useMutation({
     mutationFn: api.runPipeline,
-    onSuccess: () => {
-      queryClientInstance.invalidateQueries({ queryKey: ['companySummary'] });
-      queryClientInstance.invalidateQueries({ queryKey: ['financials'] });
-    },
+    onSuccess: invalidateInitData,
   });
 
   const refreshFinancialsMutation = useMutation({
     mutationFn: api.refreshFinancials,
     onSuccess: async () => {
-      // Use refetchQueries to ensure data is updated before showing success
-      await queryClientInstance.refetchQueries({ queryKey: ['financials'] });
+      await refetchInitData();
     },
   });
 
   const updateAllMutation = useMutation({
     mutationFn: api.updateAll,
     onSuccess: async () => {
-      // Refetch all data to ensure UI is in sync
-      await Promise.all([
-        queryClientInstance.refetchQueries({ queryKey: ['companySummary'] }),
-        queryClientInstance.refetchQueries({ queryKey: ['financials'] }),
-      ]);
+      await refetchInitData();
     },
   });
 
   const deleteCompanyMutation = useMutation({
     mutationFn: api.deleteCompany,
-    onSuccess: () => {
-      queryClientInstance.invalidateQueries({ queryKey: ['companySummary'] });
-      queryClientInstance.invalidateQueries({ queryKey: ['financials'] });
-    },
+    onSuccess: invalidateInitData,
   });
 
   const removeOutreachMutation = useMutation({
     mutationFn: ({ companyId, actionType }: { companyId: string; actionType: string }) =>
       api.deleteOutreachAction(companyId, actionType),
-    onSuccess: () => {
-      queryClientInstance.invalidateQueries({ queryKey: ['hiddenCompanies'] });
-    },
+    onSuccess: invalidateInitData,
   });
 
   // Handlers
@@ -192,7 +175,7 @@ function Dashboard() {
         onUpdateAll={handleUpdateAll}
         totalCompanies={totalCompanies}
         totalSignals={totalSignals}
-        isLoading={isLoadingSummary}
+        isLoading={isLoadingInit}
       />
 
       {/* Main Content */}
@@ -219,7 +202,7 @@ function Dashboard() {
 
         {/* Main Content - Stacked Sections */}
         <main className="flex-1 p-6 overflow-auto">
-          {isLoadingSummary ? (
+          {isLoadingInit ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
                 <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-2"></div>

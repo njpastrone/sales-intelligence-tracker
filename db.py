@@ -7,14 +7,19 @@ from supabase import create_client, Client
 
 import config
 
-# Initialize Supabase client
+# Initialize Supabase client (singleton)
+_client: Client = None
+
 def get_client() -> Client:
-    """Get Supabase client from environment/secrets."""
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
-    return create_client(url, key)
+    """Get cached Supabase client from environment/secrets."""
+    global _client
+    if _client is None:
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_KEY")
+        if not url or not key:
+            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
+        _client = create_client(url, key)
+    return _client
 
 
 # --- Companies ---
@@ -222,9 +227,9 @@ def get_company_pain_summary(days: int = 7) -> list:
     # Calculate cutoff date
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
-    # Get all signals within time window with company and article info
+    # Get signals within time window with only the fields the UI needs
     result = client.table(config.TABLE_SIGNALS).select(
-        "*, articles(*), companies(*)"
+        "id, company_id, summary, signal_type, relevance_score, sales_relevance, created_at, talking_point, articles(url, source), companies(name, ticker)"
     ).gte("relevance_score", 0.5).gte("created_at", cutoff.isoformat()).execute()
 
     # Group by company in Python

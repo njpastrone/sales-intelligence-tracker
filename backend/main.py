@@ -98,6 +98,25 @@ def get_company_summary(days: int = 7):
     return db.get_company_pain_summary(days=days)
 
 
+@app.get("/api/init")
+def get_init_data(days: int = 7, contacted_days: int = 7, snoozed_days: int = 7):
+    """Combined initial load endpoint - returns all data needed for first render."""
+    summary = db.get_company_pain_summary(days=days)
+    financials = db.get_company_financials()
+    outreach = db.get_outreach_details(
+        contacted_days=contacted_days,
+        snoozed_days=snoozed_days,
+    )
+    return {
+        "summary": summary,
+        "financials": financials,
+        "outreach": {
+            "contacted": outreach["contacted"],
+            "snoozed": outreach["snoozed"],
+        },
+    }
+
+
 @app.delete("/api/companies/{company_id}")
 def delete_company(company_id: str):
     """Delete a company and all related data."""
