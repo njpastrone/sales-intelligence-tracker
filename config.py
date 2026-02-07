@@ -140,19 +140,24 @@ Respond with ONLY this JSON (no other text):
     "ir_pain_score": 0.0-1.0
 }}"""
 
-# Talking points prompt for outreach openers
-TALKING_POINTS_PROMPT = """Generate a 1-2 sentence outreach opener for an IR services salesperson.
+# Talking points prompt for outreach openers (one per company, based on top signals)
+TALKING_POINTS_PROMPT = """<role>
+You are a senior IR services consultant drafting an outreach opener for a salesperson.
+</role>
 
-Company: {company_name}
-Signal type: {signal_type}
-Summary: {summary}
+<task>
+Write a single 1-2 sentence outreach opener for {company_name} based on their most pressing IR situation. Pick the single most compelling pain point from the signals below and reference it specifically.
+</task>
 
-Write a natural, empathetic opener that:
-1. References a specific IR-facing situation (stock impact, analyst sentiment, governance concern, leadership transition) rather than general company news
-2. Positions IR services as helpful during this moment
-3. Uses plain, conversational language as a senior consultant would
+<signals>
+{signals_block}
+</signals>
 
-Return ONLY the talking point, no quotes or labels."""
+<style>
+Write as a busy professional sending a quick note between meetings. Reference a specific IR-facing situation (stock impact, analyst sentiment, governance concern, leadership transition) rather than general company news. Keep it empathetic and low-pressure.
+</style>
+
+Return ONLY the talking point text, no quotes or labels."""
 
 # Talking points settings
 TALKING_POINTS_MIN_PAIN = 0.5  # Only generate for signals with pain >= this threshold
@@ -228,8 +233,7 @@ Respond with ONLY this JSON:
       "summary": "1-2 sentence summary focused on IR impact",
       "signal_type": "type from above",
       "relevance_score": 0.0-1.0,
-      "ir_pain_score": 0.0-1.0,
-      "talking_point": "1-2 sentence IR-focused outreach opener (only if ir_pain_score >= 0.5, else null)"
+      "ir_pain_score": 0.0-1.0
     }}
   ]
 }}

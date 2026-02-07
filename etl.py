@@ -79,28 +79,35 @@ def _is_non_ir_headline(title: str) -> bool:
     return any(kw in title_lower for kw in config.NON_IR_KEYWORDS)
 
 
-def generate_talking_point(signal_type: str, summary: str, company_name: str) -> str:
-    """Generate a personalized talking point for outreach using Claude Haiku.
+def generate_talking_point(company_name: str, signals: list) -> str:
+    """Generate one talking point per company from the top IR signals.
 
     Args:
-        signal_type: Type of pain signal (e.g., 'analyst_negative')
-        summary: Summary of the signal
         company_name: Name of the company
+        signals: List of classification dicts with signal_type, summary, sales_relevance
 
     Returns:
         A 1-2 sentence outreach opener string
     """
+    if not signals:
+        return None
+
+    # Build signals block from top signals (sorted by pain, limit to 3)
+    top = sorted(signals, key=lambda s: s.get("sales_relevance", 0), reverse=True)[:3]
+    lines = []
+    for s in top:
+        lines.append(f"- [{s['signal_type']}] (pain {s['sales_relevance']:.1f}) {s['summary']}")
+
     client = anthropic.Anthropic()
 
     prompt = config.TALKING_POINTS_PROMPT.format(
         company_name=company_name,
-        signal_type=signal_type,
-        summary=summary,
+        signals_block="\n".join(lines),
     )
 
     message = client.messages.create(
         model=config.CLAUDE_MODEL,
-        max_tokens=150,  # Short response expected
+        max_tokens=150,
         temperature=config.CLAUDE_TEMPERATURE,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -214,7 +221,6 @@ def _parse_batch_response(response_text: str, articles: list) -> list:
             signal_type = "neutral"
 
         ir_pain_score = float(item.get("ir_pain_score", 0.5))
-        talking_point = item.get("talking_point")
 
         # Override non-IR headlines that the model misclassified
         article_title = articles[idx].get("title", "") if idx < len(articles) else ""
@@ -222,11 +228,6 @@ def _parse_batch_response(response_text: str, articles: list) -> list:
             logger.info("Non-IR override: '%s' → neutral (was %s)", article_title[:60], signal_type)
             signal_type = "neutral"
             ir_pain_score = 0.0
-            talking_point = None
-
-        # Only include talking point if pain is high enough
-        if ir_pain_score < config.TALKING_POINTS_MIN_PAIN:
-            talking_point = None
 
         parsed.append({
             "article_index": idx,
@@ -234,7 +235,6 @@ def _parse_batch_response(response_text: str, articles: list) -> list:
             "signal_type": signal_type,
             "relevance_score": float(item.get("relevance_score", 0.5)),
             "sales_relevance": ir_pain_score,
-            "talking_point": talking_point,
         })
 
     return parsed
@@ -357,22 +357,25 @@ def process_company(company: dict) -> dict:
                         source=article["source"],
                         company_name=company["name"],
                     )
-                    # Generate talking point separately for fallback
-                    talking_point = None
-                    if classification["sales_relevance"] >= config.TALKING_POINTS_MIN_PAIN:
-                        try:
-                            talking_point = generate_talking_point(
-                                signal_type=classification["signal_type"],
-                                summary=classification["summary"],
-                                company_name=company["name"],
-                            )
-                        except Exception:
-                            pass
                     classification["article_index"] = abs_idx
-                    classification["talking_point"] = talking_point
                     all_classifications.append(classification)
                 except Exception:
                     continue
+
+    # Generate one talking point per company from top signals
+    qualifying = [c for c in all_classifications if c["sales_relevance"] >= config.TALKING_POINTS_MIN_PAIN]
+    talking_point = None
+    if qualifying:
+        try:
+            talking_point = generate_talking_point(company["name"], qualifying)
+        except Exception as e:
+            logger.warning(f"Talking point generation failed for {company['name']}: {e}")
+
+    # Find the highest-pain signal to attach the talking point to
+    best_idx = None
+    if talking_point and qualifying:
+        best = max(qualifying, key=lambda c: c["sales_relevance"])
+        best_idx = best["article_index"]
 
     # Build signals for batch insert
     signals_to_insert = []
@@ -390,8 +393,8 @@ def process_company(company: dict) -> dict:
             "signal_type": c["signal_type"],
             "sales_relevance": c["sales_relevance"],
         }
-        if c.get("talking_point"):
-            signal_data["talking_point"] = c["talking_point"]
+        if talking_point and idx == best_idx:
+            signal_data["talking_point"] = talking_point
         signals_to_insert.append(signal_data)
 
     # Batch insert signals
