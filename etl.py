@@ -73,6 +73,12 @@ def title_mentions_company(title: str, company_name: str, ticker: str = None) ->
     return False
 
 
+def _is_non_ir_headline(title: str) -> bool:
+    """Check if headline matches non-IR keywords that should be forced to neutral."""
+    title_lower = title.lower()
+    return any(kw in title_lower for kw in config.NON_IR_KEYWORDS)
+
+
 def generate_talking_point(signal_type: str, summary: str, company_name: str) -> str:
     """Generate a personalized talking point for outreach using Claude Haiku.
 
@@ -155,6 +161,12 @@ def classify_article(title: str, source: str, company_name: str) -> dict:
     # Use ir_pain_score for sales_relevance column (no schema change needed)
     ir_pain_score = result.get("ir_pain_score", result.get("sales_relevance", 0.5))
 
+    # Override non-IR headlines that the model misclassified
+    if _is_non_ir_headline(title) and signal_type != "neutral":
+        logger.info("Non-IR override: '%s' → neutral (was %s)", title[:60], signal_type)
+        signal_type = "neutral"
+        ir_pain_score = 0.0
+
     return {
         "summary": result.get("summary", ""),
         "relevance_score": float(result.get("relevance_score", 0.5)),
@@ -203,6 +215,14 @@ def _parse_batch_response(response_text: str, articles: list) -> list:
 
         ir_pain_score = float(item.get("ir_pain_score", 0.5))
         talking_point = item.get("talking_point")
+
+        # Override non-IR headlines that the model misclassified
+        article_title = articles[idx].get("title", "") if idx < len(articles) else ""
+        if _is_non_ir_headline(article_title) and signal_type != "neutral":
+            logger.info("Non-IR override: '%s' → neutral (was %s)", article_title[:60], signal_type)
+            signal_type = "neutral"
+            ir_pain_score = 0.0
+            talking_point = None
 
         # Only include talking point if pain is high enough
         if ir_pain_score < config.TALKING_POINTS_MIN_PAIN:

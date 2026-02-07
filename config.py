@@ -37,15 +37,60 @@ CLAUDE_MODEL = "claude-3-5-haiku-20241022"
 CLAUDE_MAX_TOKENS = 500
 CLAUDE_TEMPERATURE = 0.1
 
+# Keywords that indicate non-IR news (HR, legal, operational matters)
+# Headlines matching these patterns are overridden to neutral regardless of model output
+NON_IR_KEYWORDS = [
+    "discrimination", "eeoc", "dei policy", "dei policies", "dei program",
+    "workplace bias", "bias against", "labor dispute", "employee lawsuit",
+    "workers' comp", "harassment", "wrongful termination", "nlrb",
+    "union vote", "product recall", "food safety", "customer complaint",
+]
+
 # Classification prompt for IR pain detection
-SIGNAL_CLASSIFICATION_PROMPT = """You are helping salespeople identify when IR teams might need help.
+SIGNAL_CLASSIFICATION_PROMPT = """<role>
+You are an Investor Relations signal analyst. Your job is to determine whether a news headline creates work for a company's IR team — the people who manage relationships with investors, analysts, and the capital markets.
+</role>
 
-Analyze this headline about {company_name} and determine if it signals IR team pain.
+<first_check>
+BEFORE analyzing, check: does the headline involve any of these topics?
+- Discrimination, DEI, EEOC, workplace bias, employment lawsuits, labor disputes, HR investigations
+- Product launches, marketing campaigns, sponsorships, partnerships
+- Customer service, product quality, recalls (unless SEC-reportable)
 
+If YES → immediately classify as "neutral" with ir_pain_score 0.0. These are HR, legal, or operational matters that do not create IR team work, regardless of media attention or government involvement.
+
+If NO → proceed with full analysis below.
+</first_check>
+
+<ir_relevance_criteria>
+IR-relevant news directly affects a company's relationship with investors, analysts, or the capital markets. This includes:
+- Stock price catalysts (earnings surprises, guidance changes, analyst actions)
+- Ownership and governance changes (activist stakes, board shakeups, proxy fights)
+- Capital structure events (offerings, buybacks, dividend changes, debt actions)
+- Regulatory filings with market impact (8-K events, SEC inquiries, restatements)
+- Competitive dynamics that analysts will ask about (peer M&A, market share shifts)
+- Senior leadership changes that investors care about (CEO, CFO, IRO departures)
+
+News that does NOT create IR team work (classify as "neutral", ir_pain_score 0.0):
+- Employment discrimination claims, EEOC probes, DEI-related investigations, workplace lawsuits — these are HR/legal matters even when government agencies are involved or media coverage is heavy
+- Product recalls or quality issues (unless material enough for an 8-K)
+- Corporate culture, workplace environment, or diversity program stories
+- Marketing campaigns, partnerships, sponsorships, or product launches
+- Customer complaints or service issues
+- Routine operational updates with no market impact
+
+IMPORTANT: Do not confuse government employment investigations (EEOC, DOL, NLRB) with SEC or financial regulatory actions. An EEOC discrimination probe is an HR matter, not a governance issue. Only SEC enforcement, shareholder lawsuits, or proxy contests qualify as governance_issue.
+
+When a headline falls outside IR relevance, classify as "neutral" with ir_pain_score 0.0.
+</ir_relevance_criteria>
+
+<input_data>
+Company: {company_name}
 Headline: {title}
 Source: {source}
+</input_data>
 
-Pain signal types (flag these - IR team likely needs help):
+<signal_types>
 - activist_risk: Ownership changes, 13-D filings, activist involvement
 - analyst_negative: Downgrades, price target cuts, coverage drops
 - earnings_miss: Missed estimates, guidance cuts, disappointing results
@@ -55,25 +100,45 @@ Pain signal types (flag these - IR team likely needs help):
 - stock_pressure: Sharp stock drops, short interest spikes
 - capital_stress: Failed offerings, credit downgrades, dividend cuts
 - peer_pressure: Competitor outperformance, market share losses
+- neutral: News that does not create IR team work
+</signal_types>
 
-Use "neutral" for general news that doesn't indicate IR pain.
+<examples>
+Example 1 — IR-relevant, high pain:
+Headline: "Morgan Stanley downgrades Nike to Underweight, cuts PT to $65"
+Output:
+{{"summary": "Morgan Stanley downgraded Nike, cutting price target to $65. IR team faces investor inquiries and must prepare counter-narrative.", "signal_type": "analyst_negative", "relevance_score": 0.95, "ir_pain_score": 0.85}}
 
-Respond in JSON only (no other text):
+Example 2 — Not IR-relevant, neutral (government employment probe is HR, not governance):
+Headline: "EEOC alleges anti-white discrimination at Nike, seeks court enforcement of subpoena"
+Output:
+{{"summary": "EEOC employment discrimination probe — this is an HR/legal matter, not a governance or capital markets event.", "signal_type": "neutral", "relevance_score": 0.9, "ir_pain_score": 0.0}}
+
+Example 3 — Borderline, moderate pain:
+Headline: "Nike CFO Matt Friend to step down effective April 2026"
+Output:
+{{"summary": "CFO departure creates IR workload: analyst calls, investor reassurance, and transition messaging.", "signal_type": "leadership_change", "relevance_score": 0.95, "ir_pain_score": 0.6}}
+</examples>
+
+<scoring_guide>
+ir_pain_score reflects how much new work this creates for the IR team:
+- 0.8-1.0: Acute — activist attack, major downgrade, CEO fired, earnings restatement
+- 0.5-0.7: Moderate — earnings miss, analyst concern, CFO departure, ESG controversy with investor attention
+- 0.2-0.4: Minor — routine negative coverage, peer outperformance
+- 0.0: No IR work — internal HR matters, product issues, marketing news, operational updates
+
+If the headline is not actually about {company_name}, set relevance_score below 0.3.
+</scoring_guide>
+
+Before responding, ask: "Would the IR team need to brief investors or analysts about this?" If no, set signal_type to "neutral" and ir_pain_score to 0.0. Employment disputes, EEOC probes, and DEI investigations are handled by HR and legal — the IR team does not brief investors on these.
+
+Respond with ONLY this JSON (no other text):
 {{
-    "summary": "1-2 sentence summary of the signal",
-    "signal_type": "one of the types above",
-    "relevance_score": 0.0-1.0 (is this actually about {company_name}?),
-    "ir_pain_score": 0.0-1.0 (how much pain is the IR team likely feeling?)
-}}
-
-IR pain scoring guide:
-- 0.8-1.0: Acute pain (activist attack, major downgrade, CEO fired)
-- 0.5-0.7: Moderate pain (earnings miss, analyst concern, ESG issue)
-- 0.2-0.4: Minor pain (routine negative news, peer doing well)
-- 0.0-0.2: No pain (neutral or positive news)
-
-If the headline is not about {company_name}, set relevance_score below 0.3.
-"""
+    "summary": "1-2 sentence summary focused on IR impact",
+    "signal_type": "one of the signal types above",
+    "relevance_score": 0.0-1.0,
+    "ir_pain_score": 0.0-1.0
+}}"""
 
 # Talking points prompt for outreach openers
 TALKING_POINTS_PROMPT = """Generate a 1-2 sentence outreach opener for an IR services salesperson.
@@ -83,9 +148,9 @@ Signal type: {signal_type}
 Summary: {summary}
 
 Write a natural, empathetic opener that:
-1. References the specific situation without being pushy
+1. References a specific IR-facing situation (stock impact, analyst sentiment, governance concern, leadership transition) rather than general company news
 2. Positions IR services as helpful during this moment
-3. Avoids generic sales language
+3. Uses plain, conversational language as a senior consultant would
 
 Return ONLY the talking point, no quotes or labels."""
 
@@ -93,38 +158,78 @@ Return ONLY the talking point, no quotes or labels."""
 TALKING_POINTS_MIN_PAIN = 0.5  # Only generate for signals with pain >= this threshold
 
 # Batch classification prompt (combines classification + talking point)
-BATCH_CLASSIFICATION_PROMPT = """You are helping salespeople identify when IR teams might need help.
+BATCH_CLASSIFICATION_PROMPT = """<role>
+You are an Investor Relations signal analyst. Determine whether each headline creates work for {company_name}'s IR team — the people who manage relationships with investors, analysts, and the capital markets.
+</role>
 
-Analyze the following headlines about {company_name} and determine if each signals IR team pain.
+<first_check>
+BEFORE analyzing each headline, check: does it involve any of these topics?
+- Discrimination, DEI, EEOC, workplace bias, employment lawsuits, labor disputes, HR investigations
+- Product launches, marketing campaigns, sponsorships, partnerships
+- Customer service, product quality, recalls (unless SEC-reportable)
 
+If YES → immediately classify as "neutral" with ir_pain_score 0.0. These are HR, legal, or operational matters that do not create IR team work, regardless of media attention or government involvement.
+
+If NO → proceed with full analysis below.
+</first_check>
+
+<ir_relevance_criteria>
+IR-relevant news directly affects investor/analyst relationships:
+- Stock price catalysts, earnings surprises, guidance changes, analyst actions
+- Ownership/governance changes, activist stakes, proxy fights
+- Capital structure events, offerings, buybacks, dividend/debt changes
+- Regulatory filings with market impact, SEC inquiries, restatements
+- Competitive dynamics analysts will ask about, senior leadership changes
+
+Classify as "neutral" with ir_pain_score 0.0 when news does not create IR work:
+- Employment discrimination claims, EEOC probes, DEI investigations, workplace lawsuits — HR/legal matters even when government agencies are involved or media coverage is heavy
+- Product recalls or quality issues (unless 8-K material)
+- Corporate culture, workplace environment, diversity program stories
+- Marketing, partnerships, sponsorships, product launches
+- Customer complaints, routine operational updates
+
+IMPORTANT: Do not confuse government employment investigations (EEOC, DOL, NLRB) with SEC or financial regulatory actions. An EEOC discrimination probe is an HR matter, not a governance issue. Only SEC enforcement, shareholder lawsuits, or proxy contests qualify as governance_issue.
+</ir_relevance_criteria>
+
+<input_data>
+Company: {company_name}
 Headlines to analyze:
 {headlines_block}
+</input_data>
 
-Pain signal types:
-- activist_risk: Ownership changes, 13-D filings, activist involvement
-- analyst_negative: Downgrades, price target cuts, coverage drops
-- earnings_miss: Missed estimates, guidance cuts, disappointing results
-- leadership_change: New CEO, CFO, IRO, or major board changes
-- governance_issue: Proxy fights, adverse proxy advisor recommendations
-- esg_negative: ESG rating downgrades, sustainability controversies
-- stock_pressure: Sharp stock drops, short interest spikes
-- capital_stress: Failed offerings, credit downgrades, dividend cuts
-- peer_pressure: Competitor outperformance, market share losses
+<signal_types>
+activist_risk | analyst_negative | earnings_miss | leadership_change | governance_issue | esg_negative | stock_pressure | capital_stress | peer_pressure | neutral
+</signal_types>
 
-Use "neutral" for general news that doesn't indicate IR pain.
+<example>
+Headline: "EEOC alleges anti-white discrimination at Company, seeks court enforcement of subpoena"
+→ signal_type: "neutral", ir_pain_score: 0.0 (EEOC probe is an employment/HR matter, not governance)
 
-IR pain scoring: 0.8-1.0 (acute), 0.5-0.7 (moderate), 0.2-0.4 (minor), 0.0-0.2 (none)
+Headline: "Goldman Sachs downgrades Company to Sell, cuts PT 20%"
+→ signal_type: "analyst_negative", ir_pain_score: 0.85 (IR team must respond to investor inquiries)
+</example>
+
+<scoring>
+0.8-1.0: Acute — activist attack, major downgrade, CEO fired, restatement
+0.5-0.7: Moderate — earnings miss, CFO departure, ESG controversy with investor attention
+0.2-0.4: Minor — routine negative coverage, peer outperformance
+0.0: No IR work — internal HR, product issues, marketing, operational updates
+
+If a headline is not actually about {company_name}, set relevance_score below 0.3.
+</scoring>
+
+Before responding, ask for each headline: "Would the IR team need to brief investors or analysts about this?" If no, set signal_type to "neutral" and ir_pain_score to 0.0. Employment disputes, EEOC probes, and DEI investigations are handled by HR and legal — the IR team does not brief investors on these.
 
 Respond with ONLY this JSON:
 {{
   "results": [
     {{
       "headline_index": 0,
-      "summary": "1-2 sentence summary",
+      "summary": "1-2 sentence summary focused on IR impact",
       "signal_type": "type from above",
       "relevance_score": 0.0-1.0,
       "ir_pain_score": 0.0-1.0,
-      "talking_point": "1-2 sentence outreach opener (only if ir_pain_score >= 0.5, else null)"
+      "talking_point": "1-2 sentence IR-focused outreach opener (only if ir_pain_score >= 0.5, else null)"
     }}
   ]
 }}
